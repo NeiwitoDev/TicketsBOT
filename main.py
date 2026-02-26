@@ -264,7 +264,7 @@ class TicketView(discord.ui.View):
 async def panel(ctx):
     embed = discord.Embed(
         title="🎟️ Centro de Soporte",
-        description="Selecciona una categoría para abrir un ticket.",
+        description="Selecciona una categoría para abrir un ticket, Recuerda no abrir 1 ticket sin motivo.",
         color=discord.Color.blue()
     )
 
