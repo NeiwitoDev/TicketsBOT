@@ -50,7 +50,7 @@ class VerTicketView(discord.ui.View):
         )
 
 # ==========================================
-# SISTEMA CALIFICACIÓN
+# CALIFICACIÓN
 # ==========================================
 
 class CalificacionModal(discord.ui.Modal, title="Calificar Staff"):
@@ -89,11 +89,11 @@ class EstrellasSelect(discord.ui.Select):
         self.staff = staff
 
         options = [
-            discord.SelectOption(label="⭐ 1 Estrella", value="1"),
-            discord.SelectOption(label="⭐⭐ 2 Estrellas", value="2"),
-            discord.SelectOption(label="⭐⭐⭐ 3 Estrellas", value="3"),
-            discord.SelectOption(label="⭐⭐⭐⭐ 4 Estrellas", value="4"),
-            discord.SelectOption(label="⭐⭐⭐⭐⭐ 5 Estrellas", value="5")
+            discord.SelectOption(label="⭐ 1", value="1"),
+            discord.SelectOption(label="⭐⭐ 2", value="2"),
+            discord.SelectOption(label="⭐⭐⭐ 3", value="3"),
+            discord.SelectOption(label="⭐⭐⭐⭐ 4", value="4"),
+            discord.SelectOption(label="⭐⭐⭐⭐⭐ 5", value="5")
         ]
 
         super().__init__(placeholder="¿Cuántas estrellas le das?", options=options)
@@ -120,79 +120,85 @@ class TicketButtons(discord.ui.View):
         self.tipo = tipo
         self.claimed_by = None
 
-    @discord.ui.button(label="🔒 Cerrar Ticket", style=discord.ButtonStyle.red)
-    async def cerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = MotivoView(self.creador, self.tipo)
+    @discord.ui.button(label="📌 Reclamar Ticket", style=discord.ButtonStyle.green)
+    async def reclamar(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        if self.claimed_by:
+            await interaction.response.send_message(
+                f"⚠ Ya fue reclamado por {self.claimed_by.mention}",
+                ephemeral=True
+            )
+            return
+
+        self.claimed_by = interaction.user
+        guild = interaction.guild
+
+        staff1 = guild.get_role(STAFF_ROLE_ID_1)
+        staff2 = guild.get_role(STAFF_ROLE_ID_2)
+        alto = guild.get_role(ALTO_MANDO_ROLE_ID)
+
+        if staff1:
+            await interaction.channel.set_permissions(staff1, send_messages=False)
+        if staff2:
+            await interaction.channel.set_permissions(staff2, send_messages=False)
+
+        await interaction.channel.set_permissions(interaction.user, send_messages=True)
+
+        if alto:
+            await interaction.channel.set_permissions(alto, send_messages=True)
+
         await interaction.response.send_message(
-            "Selecciona el motivo:",
-            view=view,
-            ephemeral=True
+            f"📌 Ticket reclamado por {interaction.user.mention}"
         )
 
-# ==========================================
-# CIERRE + TXT + CALIFICACIÓN
-# ==========================================
-
-class MotivoSelect(discord.ui.Select):
-    def __init__(self, creador, tipo):
-        self.creador = creador
-        self.tipo = tipo
+    @discord.ui.button(label="🔒 Cerrar Ticket", style=discord.ButtonStyle.red)
+    async def cerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         options = [
             discord.SelectOption(label="Ticket Resuelto"),
             discord.SelectOption(label="Ticket Cerrado Sin Motivo")
         ]
 
-        super().__init__(placeholder="Motivo del cierre", options=options)
+        select = discord.ui.Select(placeholder="Motivo del cierre", options=options)
 
-    async def callback(self, interaction: discord.Interaction):
+        async def select_callback(inter):
+            motivo = select.values[0]
+            staff = inter.user
 
-        motivo = self.values[0]
-        staff = interaction.user
+            transcript = ""
+            async for msg in inter.channel.history(limit=None, oldest_first=True):
+                transcript += f"[{msg.created_at.strftime('%H:%M')}] {msg.author}: {msg.content}\n"
 
-        transcript = ""
+            archivo = discord.File(BytesIO(transcript.encode()), filename="transcripcion.txt")
 
-        async for msg in interaction.channel.history(limit=None, oldest_first=True):
-            transcript += f"[{msg.created_at.strftime('%H:%M')}] {msg.author}: {msg.content}\n"
+            embed_dm = discord.Embed(
+                title="📩 Tu Ticket Fue Cerrado",
+                description=f"**Categoría:** {self.tipo}\n"
+                            f"**Motivo:** {motivo}\n"
+                            f"**Staff Responsable:** {staff.mention}\n\n"
+                            "¿Deseas calificar al staff?",
+                color=0xFFFFFF
+            )
 
-        archivo = discord.File(
-            BytesIO(transcript.encode()),
-            filename="transcripcion.txt"
-        )
+            await self.creador.send(embed=embed_dm, file=archivo, view=CalificarView(self.creador, staff))
 
-        embed_dm = discord.Embed(
-            title="📩 Tu Ticket Fue Cerrado",
-            description=f"**Categoría:** {self.tipo}\n"
-                        f"**Motivo:** {motivo}\n"
-                        f"**Staff Responsable:** {staff.mention}\n\n"
-                        "¿Deseas calificar al staff?\nPresiona el botón abajo 👇",
-            color=0xFFFFFF
-        )
+            if self.creador.id in tickets_abiertos:
+                if self.tipo in tickets_abiertos[self.creador.id]:
+                    tickets_abiertos[self.creador.id].remove(self.tipo)
+
+            await inter.response.send_message("🔒 Cerrando ticket...")
+            await asyncio.sleep(3)
+            await inter.channel.delete()
+
+        select.callback = select_callback
 
         view = discord.ui.View()
-        view.add_item(discord.ui.Button(
-            label="⭐ Calificar Staff",
-            style=discord.ButtonStyle.green,
-            custom_id="calificar_btn"
-        ))
+        view.add_item(select)
 
-        await self.creador.send(embed=embed_dm, file=archivo, view=CalificarView(self.creador, staff))
-
-        if self.creador.id in tickets_abiertos:
-            if self.tipo in tickets_abiertos[self.creador.id]:
-                tickets_abiertos[self.creador.id].remove(self.tipo)
-
-        await interaction.response.send_message("🔒 Cerrando ticket...")
-        await asyncio.sleep(3)
-        await interaction.channel.delete()
-
-class MotivoView(discord.ui.View):
-    def __init__(self, creador, tipo):
-        super().__init__()
-        self.add_item(MotivoSelect(creador, tipo))
+        await interaction.response.send_message("Selecciona el motivo:", view=view, ephemeral=True)
 
 # ==========================================
-# PANEL CREAR TICKET
+# CREAR TICKET
 # ==========================================
 
 class TicketSelect(discord.ui.Select):
@@ -203,7 +209,6 @@ class TicketSelect(discord.ui.Select):
             discord.SelectOption(label="Reportar Usuario", emoji="🚨"),
             discord.SelectOption(label="Reportar Moderador", emoji="⚖️")
         ]
-
         super().__init__(placeholder="Selecciona categoría", options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -232,9 +237,13 @@ class TicketSelect(discord.ui.Select):
         await canal.set_permissions(interaction.guild.default_role, read_messages=False)
         await canal.set_permissions(user, read_messages=True, send_messages=True)
 
+        staff1 = interaction.guild.get_role(STAFF_ROLE_ID_1)
+        staff2 = interaction.guild.get_role(STAFF_ROLE_ID_2)
+
         botones = TicketButtons(user, tipo)
 
         await canal.send(
+            content=f"{staff1.mention if staff1 else ''} {staff2.mention if staff2 else ''}",
             embed=discord.Embed(
                 title=f"🎫 Ticket - {tipo}",
                 description="Un staff te atenderá pronto.",
@@ -255,18 +264,17 @@ class TicketView(discord.ui.View):
         self.add_item(TicketSelect())
 
 # ==========================================
-# COMANDO PANEL
+# SLASH PANEL
 # ==========================================
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def panel(ctx):
+@bot.tree.command(name="panel", description="Enviar panel de tickets")
+async def panel(interaction: discord.Interaction):
     embed = discord.Embed(
         title="🎟️ Centro de Soporte",
-        description="Selecciona una categoría para abrir un ticket, Recuerda no abrir 1 ticket sin motivo.",
+        description="Selecciona una categoría para abrir un ticket.",
         color=discord.Color.blue()
     )
-    await ctx.send(embed=embed, view=TicketView())
+    await interaction.response.send_message(embed=embed, view=TicketView())
 
 # ==========================================
 # RUN
