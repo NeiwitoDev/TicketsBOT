@@ -7,17 +7,18 @@ import asyncio
 # ⚙️ CONFIGURACIÓN
 # ===============================
 
-TICKET_CATEGORY_ID = 1466491475436245220  # 🔥 CAMBIA SOLO ESTE ID SI QUIERES OTRA CATEGORÍA
+TICKET_CATEGORY_ID = 1466491475436245220
+
+STAFF_ROLE_ID_1 = 1466244726796582964
+STAFF_ROLE_ID_2 = 1466245030334435398
+
+# ===============================
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-
-# ===============================
-# BOT READY
-# ===============================
 
 @bot.event
 async def on_ready():
@@ -117,7 +118,6 @@ class TicketSelect(discord.ui.Select):
         user = interaction.user
         tipo = self.values[0]
 
-        # 🔥 Obtener categoría por ID
         categoria = guild.get_channel(TICKET_CATEGORY_ID)
 
         if categoria is None:
@@ -137,16 +137,25 @@ class TicketSelect(discord.ui.Select):
         await canal.set_permissions(guild.default_role, read_messages=False)
         await canal.set_permissions(user, read_messages=True, send_messages=True)
 
+        # 🔥 Obtener roles
+        staff_role_1 = guild.get_role(STAFF_ROLE_ID_1)
+        staff_role_2 = guild.get_role(STAFF_ROLE_ID_2)
+
         embed = discord.Embed(
             title=f"🎫 Ticket - {tipo}",
-            description="Describe tu problema con el mayor detalle posible.\nUn staff responderá pronto.",
+            description="Describe tu problema con el mayor detalle posible.\nUn miembro del staff te responderá pronto.",
             color=discord.Color.green()
         )
 
         embed.add_field(name="👤 Usuario", value=user.mention)
-        embed.set_footer(text="Sistema de tickets • NeiwitoDev")
+        embed.set_footer(text="Sistema Profesional • NeiwitoDev")
 
-        await canal.send(user.mention, embed=embed, view=CloseTicketView())
+        # 🔥 Ping al staff
+        await canal.send(
+            content=f"{staff_role_1.mention if staff_role_1 else ''} {staff_role_2.mention if staff_role_2 else ''}",
+            embed=embed,
+            view=CloseTicketView()
+        )
 
         await interaction.response.send_message(
             "✅ Ticket creado correctamente!",
@@ -170,12 +179,12 @@ async def panel(ctx):
         title="🎟️ Centro de Soporte",
         description=(
             "Selecciona una categoría en el menú desplegable para abrir un ticket.\n"
-            "Nuestro equipo te atenderá lo antes posible."
+            "Nuestro equipo te atenderá lo antes posible, Recuerda no abrir ticket sin motivo."
         ),
         color=discord.Color.blue()
     )
 
-    embed.set_footer(text="Sistema Avanzado de Tickets • NeiwitoDev")
+    embed.set_footer(text="Sistema de Tickets • NeiwitoDev")
 
     await ctx.send(embed=embed, view=TicketView())
 
