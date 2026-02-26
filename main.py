@@ -33,7 +33,7 @@ from discord.ext import tasks
 import itertools
 
 estados = itertools.cycle([
-    discord.Activity(type=discord.ActivityType.watching, name="↪developer: neiwito."),
+    discord.Activity(type=discord.ActivityType.watching, name="↪ developer: neiwito."),
     discord.Activity(type=discord.ActivityType.playing, name="↪ Villa Carlos Paz RP")
 ])
 
