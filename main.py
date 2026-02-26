@@ -29,8 +29,21 @@ tickets_abiertos = {}
 # READY
 # ===============================
 
+from discord.ext import tasks
+import itertools
+
+estados = itertools.cycle([
+    discord.Activity(type=discord.ActivityType.watching, name="developer neiwito."),
+    discord.Activity(type=discord.ActivityType.playing, name="↪ Villa Carlos Paz RP")
+])
+
+@tasks.loop(seconds=15)
+async def cambiar_estado():
+    await bot.change_presence(activity=next(estados))
+
 @bot.event
 async def on_ready():
+    cambiar_estado.start()
     print(f"✅ Bot conectado como {bot.user}")
 
 # ===============================
