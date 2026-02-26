@@ -12,7 +12,7 @@ TICKET_CATEGORY_ID = 1466491475436245220
 STAFF_ROLE_ID_1 = 1466244726796582964
 STAFF_ROLE_ID_2 = 1466245030334435398
 
-ALTO_MANDO_ROLE_ID = 1476595202813857857  
+ALTO_MANDO_ROLE_ID = 123456789012345678  # CAMBIAR
 
 # ===============================
 
@@ -22,6 +22,9 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Guardamos tickets activos
+tickets_abiertos = {}
+
 # ===============================
 # READY
 # ===============================
@@ -29,11 +32,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
-    try:
-        synced = await bot.tree.sync()
-        print(f"🔁 Slash commands sincronizados: {len(synced)}")
-    except Exception as e:
-        print(e)
 
 # ===============================
 # VER TICKET
@@ -51,11 +49,15 @@ class VerTicketView(discord.ui.View):
         )
 
 # ===============================
-# CIERRE CON MOTIVO
+# CIERRE CON TRANSCRIPCIÓN + MD
 # ===============================
 
 class MotivoSelect(discord.ui.Select):
-    def __init__(self):
+    def __init__(self, creador, tipo, claimed_by):
+        self.creador = creador
+        self.tipo = tipo
+        self.claimed_by = claimed_by
+
         options = [
             discord.SelectOption(label="Ticket Resuelto", emoji="✅"),
             discord.SelectOption(label="Ticket Cerrado Sin Motivo", emoji="⚠️")
@@ -69,38 +71,71 @@ class MotivoSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        motivo = self.values[0]
 
-        embed = discord.Embed(
-            title="🔒 Ticket Cerrado",
-            description=f"Motivo: **{motivo}**\n\nEl canal se eliminará en 5 segundos.",
+        motivo = self.values[0]
+        staff = interaction.user
+
+        # 📜 Generar transcripción
+        mensajes = []
+        async for msg in interaction.channel.history(limit=None, oldest_first=True):
+            mensajes.append(f"[{msg.created_at.strftime('%H:%M')}] {msg.author}: {msg.content}")
+
+        transcripcion = "\n".join(mensajes)
+
+        embed_dm = discord.Embed(
+            title="📩 Tu Ticket Fue Cerrado",
+            description=f"**Categoría:** {self.tipo}\n"
+                        f"**Motivo:** {motivo}\n"
+                        f"**Staff Responsable:** {staff.mention}",
+            color=0xFFFFFF
+        )
+
+        embed_dm.add_field(
+            name="📜 Transcripción",
+            value=transcripcion[:1000] if transcripcion else "Sin mensajes.",
+            inline=False
+        )
+
+        try:
+            await self.creador.send(embed=embed_dm)
+        except:
+            pass
+
+        # Eliminar del registro anti-duplicado
+        if self.creador.id in tickets_abiertos:
+            if self.tipo in tickets_abiertos[self.creador.id]:
+                tickets_abiertos[self.creador.id].remove(self.tipo)
+
+        embed_close = discord.Embed(
+            description=f"🔒 Ticket cerrado por {staff.mention}\nMotivo: **{motivo}**\n\nEl canal se eliminará en 5 segundos.",
             color=discord.Color.red()
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed_close)
         await asyncio.sleep(5)
         await interaction.channel.delete()
 
 class MotivoView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, creador, tipo, claimed_by):
         super().__init__(timeout=60)
-        self.add_item(MotivoSelect())
+        self.add_item(MotivoSelect(creador, tipo, claimed_by))
 
 # ===============================
 # BOTONES DEL TICKET
 # ===============================
 
 class TicketButtons(discord.ui.View):
-    def __init__(self, creador):
+    def __init__(self, creador, tipo):
         super().__init__(timeout=None)
         self.creador = creador
+        self.tipo = tipo
         self.claimed_by = None
 
     @discord.ui.button(label="🔒 Cerrar Ticket", style=discord.ButtonStyle.red)
     async def cerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
             "Selecciona el motivo del cierre:",
-            view=MotivoView(),
+            view=MotivoView(self.creador, self.tipo, self.claimed_by),
             ephemeral=True
         )
 
@@ -109,7 +144,7 @@ class TicketButtons(discord.ui.View):
 
         if self.claimed_by:
             await interaction.response.send_message(
-                f"⚠️ Este ticket ya fue reclamado por {self.claimed_by.mention}",
+                f"⚠️ Ya fue reclamado por {self.claimed_by.mention}",
                 ephemeral=True
             )
             return
@@ -118,8 +153,6 @@ class TicketButtons(discord.ui.View):
         guild = interaction.guild
 
         alto_mando = guild.get_role(ALTO_MANDO_ROLE_ID)
-
-        # Quitar permisos de escritura a staff
         staff1 = guild.get_role(STAFF_ROLE_ID_1)
         staff2 = guild.get_role(STAFF_ROLE_ID_2)
 
@@ -129,10 +162,8 @@ class TicketButtons(discord.ui.View):
         if staff2:
             await interaction.channel.set_permissions(staff2, send_messages=False)
 
-        # Permitir escribir solo al que reclamó
         await interaction.channel.set_permissions(interaction.user, send_messages=True)
 
-        # Permitir altos mandos escribir
         if alto_mando:
             await interaction.channel.set_permissions(alto_mando, send_messages=True)
 
@@ -144,7 +175,7 @@ class TicketButtons(discord.ui.View):
         await interaction.response.send_message(embed=embed)
 
 # ===============================
-# MENÚ CREAR TICKET
+# MENÚ CREAR TICKET (ANTI DUPLICADO)
 # ===============================
 
 class TicketSelect(discord.ui.Select):
@@ -169,6 +200,19 @@ class TicketSelect(discord.ui.Select):
         user = interaction.user
         tipo = self.values[0]
 
+        # 🔥 ANTI DOBLE TICKET
+        if user.id not in tickets_abiertos:
+            tickets_abiertos[user.id] = []
+
+        if tipo in tickets_abiertos[user.id]:
+            await interaction.response.send_message(
+                "❌ Ya tienes un ticket abierto en esta categoría.",
+                ephemeral=True
+            )
+            return
+
+        tickets_abiertos[user.id].append(tipo)
+
         categoria = guild.get_channel(TICKET_CATEGORY_ID)
 
         nombre_canal = f"{tipo.lower().replace(' ', '-')}-{user.name}"
@@ -190,9 +234,7 @@ class TicketSelect(discord.ui.Select):
             color=discord.Color.green()
         )
 
-        embed.add_field(name="👤 Usuario", value=user.mention)
-
-        botones = TicketButtons(user)
+        botones = TicketButtons(user, tipo)
 
         await canal.send(
             content=f"{staff_role_1.mention if staff_role_1 else ''} {staff_role_2.mention if staff_role_2 else ''}",
@@ -222,7 +264,7 @@ class TicketView(discord.ui.View):
 async def panel(ctx):
     embed = discord.Embed(
         title="🎟️ Centro de Soporte",
-        description="Selecciona una categoría para abrir un ticket, Recuerda no  abrir sin motivo.",
+        description="Selecciona una categoría para abrir un ticket.",
         color=discord.Color.blue()
     )
 
