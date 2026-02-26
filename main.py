@@ -2,6 +2,9 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+from discord.ext import tasks
+import itertools
+from discord import app_commands
 
 # ===============================
 # ⚙️ CONFIGURACIÓN
@@ -14,6 +17,11 @@ STAFF_ROLE_ID_2 = 1466245030334435398
 
 ALTO_MANDO_ROLE_ID = 1476595202813857857
 
+# 🎯 CONFIG COMANDO CALIFICAR
+CANAL_COMANDO_ID = 1466231866041307187
+CANAL_CALIFICACIONES_ID = 1466240831609638923
+ROL_STAFF_CALIFICABLE = 1466245030334435398
+
 # ===============================
 
 intents = discord.Intents.default()
@@ -22,15 +30,11 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Guardamos tickets activos
 tickets_abiertos = {}
 
 # ===============================
-# READY
+# READY + SLASH SYNC
 # ===============================
-
-from discord.ext import tasks
-import itertools
 
 estados = itertools.cycle([
     discord.Activity(type=discord.ActivityType.watching, name="↪ developer: neiwito."),
@@ -44,10 +48,86 @@ async def cambiar_estado():
 @bot.event
 async def on_ready():
     cambiar_estado.start()
+
+    try:
+        synced = await bot.tree.sync()
+        print(f"🔁 Slash commands sincronizados: {len(synced)}")
+    except Exception as e:
+        print(e)
+
     print(f"✅ Bot conectado como {bot.user}")
 
 # ===============================
-# VER TICKET
+# COMANDO /calificar-staff
+# ===============================
+
+@bot.tree.command(name="calificar-staff", description="Calificar a un miembro del staff")
+@app_commands.describe(
+    staff="Selecciona el staff a calificar",
+    calificacion="Puntuación del 1 al 5",
+    nota="Comentario sobre el servicio"
+)
+@app_commands.choices(calificacion=[
+    app_commands.Choice(name="⭐ 1", value=1),
+    app_commands.Choice(name="⭐⭐ 2", value=2),
+    app_commands.Choice(name="⭐⭐⭐ 3", value=3),
+    app_commands.Choice(name="⭐⭐⭐⭐ 4", value=4),
+    app_commands.Choice(name="⭐⭐⭐⭐⭐ 5", value=5),
+])
+async def calificar_staff(interaction: discord.Interaction,
+                          staff: discord.Member,
+                          calificacion: app_commands.Choice[int],
+                          nota: str):
+
+    if interaction.channel.id != CANAL_COMANDO_ID:
+        await interaction.response.send_message(
+            "❌ Este comando solo puede usarse en el canal correspondiente.",
+            ephemeral=True
+        )
+        return
+
+    if ROL_STAFF_CALIFICABLE not in [role.id for role in staff.roles]:
+        await interaction.response.send_message(
+            "❌ Solo puedes calificar a miembros del staff autorizados.",
+            ephemeral=True
+        )
+        return
+
+    canal_envio = interaction.guild.get_channel(CANAL_CALIFICACIONES_ID)
+
+    estrellas = "⭐" * calificacion.value
+
+    embed = discord.Embed(
+        title="📊 Nueva Calificación de Staff",
+        description=(
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"👤 **Staff:** {staff.mention}\n"
+            f"🧑 **Calificado por:** {interaction.user.mention}\n"
+            f"⭐ **Puntuación:** {estrellas}\n"
+            f"━━━━━━━━━━━━━━━━━━"
+        ),
+        color=0x2F3136
+    )
+
+    embed.add_field(
+        name="📝 Nota del usuario",
+        value=f"```{nota}```",
+        inline=False
+    )
+
+    embed.set_footer(text="Sistema de Evaluación • Villa Carlos Paz RP")
+    embed.set_thumbnail(url=staff.display_avatar.url)
+
+    if canal_envio:
+        await canal_envio.send(embed=embed)
+
+    await interaction.response.send_message(
+        "✅ Calificación enviada correctamente.",
+        ephemeral=True
+    )
+
+# ===============================
+# RESTO DEL SISTEMA DE TICKETS
 # ===============================
 
 class VerTicketView(discord.ui.View):
@@ -60,10 +140,6 @@ class VerTicketView(discord.ui.View):
                 url=canal.jump_url
             )
         )
-
-# ===============================
-# CIERRE CON TRANSCRIPCIÓN + MD
-# ===============================
 
 class MotivoSelect(discord.ui.Select):
     def __init__(self, creador, tipo, claimed_by):
@@ -88,7 +164,6 @@ class MotivoSelect(discord.ui.Select):
         motivo = self.values[0]
         staff = interaction.user
 
-        # 📜 Generar transcripción
         mensajes = []
         async for msg in interaction.channel.history(limit=None, oldest_first=True):
             mensajes.append(f"[{msg.created_at.strftime('%H:%M')}] {msg.author}: {msg.content}")
@@ -114,7 +189,6 @@ class MotivoSelect(discord.ui.Select):
         except:
             pass
 
-        # Eliminar del registro anti-duplicado
         if self.creador.id in tickets_abiertos:
             if self.tipo in tickets_abiertos[self.creador.id]:
                 tickets_abiertos[self.creador.id].remove(self.tipo)
@@ -132,10 +206,6 @@ class MotivoView(discord.ui.View):
     def __init__(self, creador, tipo, claimed_by):
         super().__init__(timeout=60)
         self.add_item(MotivoSelect(creador, tipo, claimed_by))
-
-# ===============================
-# BOTONES DEL TICKET
-# ===============================
 
 class TicketButtons(discord.ui.View):
     def __init__(self, creador, tipo):
@@ -187,10 +257,6 @@ class TicketButtons(discord.ui.View):
 
         await interaction.response.send_message(embed=embed)
 
-# ===============================
-# MENÚ CREAR TICKET (ANTI DUPLICADO)
-# ===============================
-
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -213,7 +279,6 @@ class TicketSelect(discord.ui.Select):
         user = interaction.user
         tipo = self.values[0]
 
-        # 🔥 ANTI DOBLE TICKET
         if user.id not in tickets_abiertos:
             tickets_abiertos[user.id] = []
 
@@ -227,7 +292,6 @@ class TicketSelect(discord.ui.Select):
         tickets_abiertos[user.id].append(tipo)
 
         categoria = guild.get_channel(TICKET_CATEGORY_ID)
-
         nombre_canal = f"{tipo.lower().replace(' ', '-')}-{user.name}"
 
         canal = await guild.create_text_channel(
@@ -267,10 +331,6 @@ class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(TicketSelect())
-
-# ===============================
-# COMANDO PANEL
-# ===============================
 
 @bot.command()
 @commands.has_permissions(administrator=True)
