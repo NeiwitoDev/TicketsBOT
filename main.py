@@ -22,70 +22,129 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ===============================
+# READY
+# ===============================
+
 @bot.event
 async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"🔁 Slash commands sincronizados: {len(synced)}")
+    except Exception as e:
+        print(e)
 
 # ===============================
-# VISTA BOTONES TICKET
+# VER TICKET
+# ===============================
+
+class VerTicketView(discord.ui.View):
+    def __init__(self, canal):
+        super().__init__(timeout=60)
+        self.add_item(
+            discord.ui.Button(
+                label="🔎 Ver Ticket",
+                style=discord.ButtonStyle.link,
+                url=canal.jump_url
+            )
+        )
+
+# ===============================
+# CIERRE CON MOTIVO
+# ===============================
+
+class MotivoSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Ticket Resuelto", emoji="✅"),
+            discord.SelectOption(label="Ticket Cerrado Sin Motivo", emoji="⚠️")
+        ]
+
+        super().__init__(
+            placeholder="Selecciona el motivo del cierre...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        motivo = self.values[0]
+
+        embed = discord.Embed(
+            title="🔒 Ticket Cerrado",
+            description=f"Motivo: **{motivo}**\n\nEl canal se eliminará en 5 segundos.",
+            color=discord.Color.red()
+        )
+
+        await interaction.response.send_message(embed=embed)
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
+
+class MotivoView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+        self.add_item(MotivoSelect())
+
+# ===============================
+# BOTONES DEL TICKET
 # ===============================
 
 class TicketButtons(discord.ui.View):
-    def __init__(self):
+    def __init__(self, creador):
         super().__init__(timeout=None)
+        self.creador = creador
+        self.claimed_by = None
 
     @discord.ui.button(label="🔒 Cerrar Ticket", style=discord.ButtonStyle.red)
     async def cerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("🔒 Cerrando ticket en 5 segundos...")
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
+        await interaction.response.send_message(
+            "Selecciona el motivo del cierre:",
+            view=MotivoView(),
+            ephemeral=True
+        )
 
     @discord.ui.button(label="📌 Reclamar Ticket", style=discord.ButtonStyle.green)
     async def reclamar(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        guild = interaction.guild
-        canal = interaction.channel
-        user = interaction.user
-
-        staff_role_1 = guild.get_role(STAFF_ROLE_ID_1)
-        staff_role_2 = guild.get_role(STAFF_ROLE_ID_2)
-        alto_mando_role = guild.get_role(ALTO_MANDO_ROLE_ID)
-
-        # Verificar que sea staff
-        if not (
-            staff_role_1 in user.roles or
-            staff_role_2 in user.roles or
-            alto_mando_role in user.roles
-        ):
+        if self.claimed_by:
             await interaction.response.send_message(
-                "❌ Solo el staff puede reclamar tickets.",
+                f"⚠️ Este ticket ya fue reclamado por {self.claimed_by.mention}",
                 ephemeral=True
             )
             return
 
-        # Bloquear escritura a staff normal
-        if staff_role_1:
-            await canal.set_permissions(staff_role_1, send_messages=False)
-        if staff_role_2:
-            await canal.set_permissions(staff_role_2, send_messages=False)
+        self.claimed_by = interaction.user
+        guild = interaction.guild
 
-        # Permitir escribir al que reclama
-        await canal.set_permissions(user, send_messages=True)
+        alto_mando = guild.get_role(ALTO_MANDO_ROLE_ID)
 
-        # Alto mando siempre puede escribir
-        if alto_mando_role:
-            await canal.set_permissions(alto_mando_role, send_messages=True)
+        # Quitar permisos de escritura a staff
+        staff1 = guild.get_role(STAFF_ROLE_ID_1)
+        staff2 = guild.get_role(STAFF_ROLE_ID_2)
+
+        if staff1:
+            await interaction.channel.set_permissions(staff1, send_messages=False)
+
+        if staff2:
+            await interaction.channel.set_permissions(staff2, send_messages=False)
+
+        # Permitir escribir solo al que reclamó
+        await interaction.channel.set_permissions(interaction.user, send_messages=True)
+
+        # Permitir altos mandos escribir
+        if alto_mando:
+            await interaction.channel.set_permissions(alto_mando, send_messages=True)
 
         embed = discord.Embed(
-            title="📌 Ticket Reclamado",
-            description=f"Este ticket fue reclamado por {user.mention}",
-            color=discord.Color.orange()
+            description=f"📌 Ticket reclamado por {interaction.user.mention}",
+            color=discord.Color.gold()
         )
 
         await interaction.response.send_message(embed=embed)
 
 # ===============================
-# CREACIÓN TICKET
+# MENÚ CREAR TICKET
 # ===============================
 
 class TicketSelect(discord.ui.Select):
@@ -112,13 +171,6 @@ class TicketSelect(discord.ui.Select):
 
         categoria = guild.get_channel(TICKET_CATEGORY_ID)
 
-        if not categoria:
-            await interaction.response.send_message(
-                "❌ Error: categoría no encontrada.",
-                ephemeral=True
-            )
-            return
-
         nombre_canal = f"{tipo.lower().replace(' ', '-')}-{user.name}"
 
         canal = await guild.create_text_channel(
@@ -129,25 +181,30 @@ class TicketSelect(discord.ui.Select):
         await canal.set_permissions(guild.default_role, read_messages=False)
         await canal.set_permissions(user, read_messages=True, send_messages=True)
 
+        staff_role_1 = guild.get_role(STAFF_ROLE_ID_1)
+        staff_role_2 = guild.get_role(STAFF_ROLE_ID_2)
+
         embed = discord.Embed(
             title=f"🎫 Ticket - {tipo}",
-            description="Describe tu problema. Un miembro del staff te responderá pronto.",
+            description="Un miembro del staff te atenderá pronto.",
             color=discord.Color.green()
         )
 
         embed.add_field(name="👤 Usuario", value=user.mention)
 
-        staff_role_1 = guild.get_role(STAFF_ROLE_ID_1)
-        staff_role_2 = guild.get_role(STAFF_ROLE_ID_2)
+        botones = TicketButtons(user)
 
         await canal.send(
             content=f"{staff_role_1.mention if staff_role_1 else ''} {staff_role_2.mention if staff_role_2 else ''}",
             embed=embed,
-            view=TicketButtons()
+            view=botones
         )
 
+        view = VerTicketView(canal)
+
         await interaction.response.send_message(
-            "✅ Ticket creado correctamente.",
+            "🎫 Ticket creado correctamente!\nPresiona el botón para ir al ticket.",
+            view=view,
             ephemeral=True
         )
 
@@ -163,13 +220,16 @@ class TicketView(discord.ui.View):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def panel(ctx):
-
     embed = discord.Embed(
         title="🎟️ Centro de Soporte",
-        description="¡Bienvenido al Panel de tickets! Aqui Puedes abrir 1 ticket si tienes un problema... Recuerda no abrir sin motivo.",
+        description="Selecciona una categoría para abrir un ticket, Recuerda no  abrir sin motivo.",
         color=discord.Color.blue()
     )
 
     await ctx.send(embed=embed, view=TicketView())
+
+# ===============================
+# RUN
+# ===============================
 
 bot.run(os.getenv("TOKEN"))
