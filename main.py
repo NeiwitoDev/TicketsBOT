@@ -12,6 +12,8 @@ TICKET_CATEGORY_ID = 1466491475436245220
 STAFF_ROLE_ID_1 = 1466244726796582964
 STAFF_ROLE_ID_2 = 1466245030334435398
 
+ALTO_MANDO_ROLE_ID = 123456789012345678  # ← CAMBIAR
+
 # ===============================
 
 intents = discord.Intents.default()
@@ -25,75 +27,65 @@ async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
 
 # ===============================
-# BOTÓN VER TICKET
+# VISTA BOTONES TICKET
 # ===============================
 
-class VerTicketView(discord.ui.View):
-    def __init__(self, canal):
-        super().__init__(timeout=None)
-        self.add_item(
-            discord.ui.Button(
-                label="🔎 Ver Ticket",
-                style=discord.ButtonStyle.link,
-                url=canal.jump_url
-            )
-        )
-
-# ===============================
-# MENÚ MOTIVO CIERRE
-# ===============================
-
-class MotivoSelect(discord.ui.Select):
-    def __init__(self):
-        options = [
-            discord.SelectOption(label="Ticket Resuelto", emoji="✅"),
-            discord.SelectOption(label="Ticket Cerrado Sin Motivo", emoji="⚠️")
-        ]
-
-        super().__init__(
-            placeholder="Selecciona el motivo del cierre...",
-            min_values=1,
-            max_values=1,
-            options=options
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        motivo = self.values[0]
-
-        embed = discord.Embed(
-            title="🔒 Ticket Cerrado",
-            description=f"**Motivo:** {motivo}\n\nEl canal se eliminará en 5 segundos.",
-            color=discord.Color.red()
-        )
-
-        await interaction.response.send_message(embed=embed)
-
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
-
-class MotivoView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-        self.add_item(MotivoSelect())
-
-# ===============================
-# BOTÓN CERRAR
-# ===============================
-
-class CloseTicketView(discord.ui.View):
+class TicketButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="🔒 Cerrar Ticket", style=discord.ButtonStyle.red)
     async def cerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "Selecciona el motivo del cierre:",
-            view=MotivoView(),
-            ephemeral=True
+        await interaction.response.send_message("🔒 Cerrando ticket en 5 segundos...")
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
+
+    @discord.ui.button(label="📌 Reclamar Ticket", style=discord.ButtonStyle.green)
+    async def reclamar(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        guild = interaction.guild
+        canal = interaction.channel
+        user = interaction.user
+
+        staff_role_1 = guild.get_role(STAFF_ROLE_ID_1)
+        staff_role_2 = guild.get_role(STAFF_ROLE_ID_2)
+        alto_mando_role = guild.get_role(ALTO_MANDO_ROLE_ID)
+
+        # Verificar que sea staff
+        if not (
+            staff_role_1 in user.roles or
+            staff_role_2 in user.roles or
+            alto_mando_role in user.roles
+        ):
+            await interaction.response.send_message(
+                "❌ Solo el staff puede reclamar tickets.",
+                ephemeral=True
+            )
+            return
+
+        # Bloquear escritura a staff normal
+        if staff_role_1:
+            await canal.set_permissions(staff_role_1, send_messages=False)
+        if staff_role_2:
+            await canal.set_permissions(staff_role_2, send_messages=False)
+
+        # Permitir escribir al que reclama
+        await canal.set_permissions(user, send_messages=True)
+
+        # Alto mando siempre puede escribir
+        if alto_mando_role:
+            await canal.set_permissions(alto_mando_role, send_messages=True)
+
+        embed = discord.Embed(
+            title="📌 Ticket Reclamado",
+            description=f"Este ticket fue reclamado por {user.mention}",
+            color=discord.Color.orange()
         )
 
+        await interaction.response.send_message(embed=embed)
+
 # ===============================
-# MENÚ CREACIÓN TICKET
+# CREACIÓN TICKET
 # ===============================
 
 class TicketSelect(discord.ui.Select):
@@ -120,9 +112,9 @@ class TicketSelect(discord.ui.Select):
 
         categoria = guild.get_channel(TICKET_CATEGORY_ID)
 
-        if categoria is None:
+        if not categoria:
             await interaction.response.send_message(
-                "❌ Error: La categoría configurada no existe.",
+                "❌ Error: categoría no encontrada.",
                 ephemeral=True
             )
             return
@@ -137,29 +129,25 @@ class TicketSelect(discord.ui.Select):
         await canal.set_permissions(guild.default_role, read_messages=False)
         await canal.set_permissions(user, read_messages=True, send_messages=True)
 
-        # 🔥 Obtener roles
-        staff_role_1 = guild.get_role(STAFF_ROLE_ID_1)
-        staff_role_2 = guild.get_role(STAFF_ROLE_ID_2)
-
         embed = discord.Embed(
             title=f"🎫 Ticket - {tipo}",
-            description="Describe tu problema con el mayor detalle posible.\nUn miembro del staff te responderá pronto.",
+            description="Describe tu problema. Un miembro del staff te responderá pronto.",
             color=discord.Color.green()
         )
 
         embed.add_field(name="👤 Usuario", value=user.mention)
-        embed.set_footer(text="Sistema Profesional • NeiwitoDev")
 
-        # 🔥 Ping al staff
+        staff_role_1 = guild.get_role(STAFF_ROLE_ID_1)
+        staff_role_2 = guild.get_role(STAFF_ROLE_ID_2)
+
         await canal.send(
             content=f"{staff_role_1.mention if staff_role_1 else ''} {staff_role_2.mention if staff_role_2 else ''}",
             embed=embed,
-            view=CloseTicketView()
+            view=TicketButtons()
         )
 
         await interaction.response.send_message(
-            "✅ Ticket creado correctamente!",
-            view=VerTicketView(canal),
+            "✅ Ticket creado correctamente.",
             ephemeral=True
         )
 
@@ -175,16 +163,12 @@ class TicketView(discord.ui.View):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def panel(ctx):
+
     embed = discord.Embed(
         title="🎟️ Centro de Soporte",
-        description=(
-            "Selecciona una categoría en el menú desplegable para abrir un ticket.\n"
-            "Nuestro equipo te atenderá lo antes posible, Recuerda no abrir ticket sin motivo."
-        ),
+        description="Selecciona una categoría para abrir un ticket.",
         color=discord.Color.blue()
     )
-
-    embed.set_footer(text="Sistema de Tickets • NeiwitoDev")
 
     await ctx.send(embed=embed, view=TicketView())
 
