@@ -167,7 +167,7 @@ async def panel(ctx):
     embed = discord.Embed(
         title="🎟️ Centro de Soporte",
         description="¡Bienvenido al Panel de tickets! Aqui Puedes abrir 1 ticket si tienes un problema... Recuerda no abrir sin motivo.",
-        color=discord.Color.white()
+        color=discord.Color.blue()
     )
 
     await ctx.send(embed=embed, view=TicketView())
