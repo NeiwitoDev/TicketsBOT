@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord import app_commands
 import os
 import asyncio
-from io import BytesIO
 
 # ================= CONFIG =================
 
@@ -165,12 +164,6 @@ class TicketButtons(discord.ui.View):
             motivo = select.values[0]
             staff = inter.user
 
-            transcript = ""
-            async for msg in inter.channel.history(limit=None, oldest_first=True):
-                transcript += f"[{msg.created_at.strftime('%H:%M')}] {msg.author}: {msg.content}\n"
-
-            archivo = discord.File(BytesIO(transcript.encode()), filename="transcripcion.txt")
-
             embed_dm = discord.Embed(
                 title="📩 Tu Ticket Fue Cerrado",
                 description=f"**Categoría:** {self.tipo}\n"
@@ -180,7 +173,7 @@ class TicketButtons(discord.ui.View):
                 color=0xFFFFFF
             )
 
-            await self.creador.send(embed=embed_dm, file=archivo, view=CalificarView(self.creador, staff))
+            await self.creador.send(embed=embed_dm, view=CalificarView(self.creador, staff))
 
             if self.creador.id in tickets_abiertos:
                 if self.tipo in tickets_abiertos[self.creador.id]:
@@ -275,6 +268,43 @@ async def panel(interaction: discord.Interaction):
         color=discord.Color.blue()
     )
     await interaction.response.send_message(embed=embed, view=TicketView())
+
+# ==========================================
+# SLASH CALIFICAR
+# ==========================================
+
+@bot.tree.command(name="calificar-staff", description="Califica a un staff")
+@app_commands.describe(staff="Miembro del staff", calificacion="1-5", nota="Motivo")
+async def calificar_staff(interaction: discord.Interaction, staff: discord.Member, calificacion: int, nota: str):
+
+    if interaction.channel.id != CANAL_COMANDO_CALIFICAR:
+        await interaction.response.send_message(
+            "❌ Este comando solo puede usarse en el canal designado.",
+            ephemeral=True
+        )
+        return
+
+    if calificacion < 1 or calificacion > 5:
+        await interaction.response.send_message(
+            "❌ La calificación debe ser entre 1 y 5.",
+            ephemeral=True
+        )
+        return
+
+    canal_logs = interaction.guild.get_channel(CANAL_LOGS_CALIFICACIONES)
+    estrellas_visual = "⭐" * calificacion
+
+    embed = discord.Embed(
+        title="📊 Nueva Calificación de Staff",
+        color=0xFFFFFF
+    )
+    embed.add_field(name="👤 Usuario", value=interaction.user.mention, inline=False)
+    embed.add_field(name="🛡️ Staff", value=staff.mention, inline=False)
+    embed.add_field(name="⭐ Calificación", value=estrellas_visual, inline=False)
+    embed.add_field(name="📝 Nota", value=nota, inline=False)
+
+    await canal_logs.send(embed=embed)
+    await interaction.response.send_message("✅ Calificación enviada.", ephemeral=True)
 
 # ==========================================
 # RUN
