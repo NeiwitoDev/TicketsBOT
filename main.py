@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+import json
 from discord.ext import tasks
 import itertools
 from discord import app_commands
@@ -17,10 +18,11 @@ STAFF_ROLE_ID_2 = 1466245030334435398
 
 ALTO_MANDO_ROLE_ID = 1476595202813857857
 
-# 🎯 CONFIG COMANDO CALIFICAR
+# 🎯 CONFIG CALIFICACIONES
 CANAL_COMANDO_ID = 1466231866041307187
 CANAL_CALIFICACIONES_ID = 1466240831609638923
 ROL_STAFF_CALIFICABLE = 1466245030334435398
+DATA_FILE = "calificaciones.json"
 
 # ===============================
 
@@ -33,7 +35,21 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tickets_abiertos = {}
 
 # ===============================
-# READY + SLASH SYNC
+# SISTEMA JSON CALIFICACIONES
+# ===============================
+
+def cargar_datos():
+    if not os.path.exists(DATA_FILE):
+        return {}
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
+
+def guardar_datos(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+# ===============================
+# READY
 # ===============================
 
 estados = itertools.cycle([
@@ -58,7 +74,7 @@ async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
 
 # ===============================
-# COMANDO /calificar-staff
+# /calificar-staff
 # ===============================
 
 @bot.tree.command(name="calificar-staff", description="Calificar a un miembro del staff")
@@ -88,46 +104,69 @@ async def calificar_staff(interaction: discord.Interaction,
 
     if ROL_STAFF_CALIFICABLE not in [role.id for role in staff.roles]:
         await interaction.response.send_message(
-            "❌ Solo puedes calificar a miembros del staff autorizados.",
+            "❌ Solo puedes calificar a miembros oficiales del staff.",
             ephemeral=True
         )
         return
 
-    canal_envio = interaction.guild.get_channel(CANAL_CALIFICACIONES_ID)
+    data = cargar_datos()
+    staff_id = str(staff.id)
 
+    if staff_id not in data:
+        data[staff_id] = {"total": 0, "suma": 0}
+
+    data[staff_id]["total"] += 1
+    data[staff_id]["suma"] += calificacion.value
+    guardar_datos(data)
+
+    total = data[staff_id]["total"]
+    promedio = round(data[staff_id]["suma"] / total, 2)
     estrellas = "⭐" * calificacion.value
 
+    canal_envio = interaction.guild.get_channel(CANAL_CALIFICACIONES_ID)
+
     embed = discord.Embed(
-        title="📊 Nueva Calificación de Staff",
+        title="📋 Registro Oficial de Evaluación",
         description=(
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"👤 **Staff:** {staff.mention}\n"
-            f"🧑 **Calificado por:** {interaction.user.mention}\n"
-            f"⭐ **Puntuación:** {estrellas}\n"
-            f"━━━━━━━━━━━━━━━━━━"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 **Usuario:** {interaction.user.mention}\n"
+            f"🛡️ **Staff Evaluado:** {staff.mention}\n"
+            f"🌟 **Calificación:** {estrellas}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━"
         ),
-        color=0x2F3136
+        color=0x00BFFF
     )
 
     embed.add_field(
-        name="📝 Nota del usuario",
+        name="💬 Opinión del Usuario",
         value=f"```{nota}```",
         inline=False
     )
 
-    embed.set_footer(text="Sistema de Evaluación • Villa Carlos Paz RP")
+    embed.add_field(
+        name="📊 Estadísticas del Staff",
+        value=(
+            f"📝 Total de evaluaciones: **{total}**\n"
+            f"📈 Promedio actual: **{promedio}/5**"
+        ),
+        inline=False
+    )
+
     embed.set_thumbnail(url=staff.display_avatar.url)
+    embed.set_footer(text="VCP • Villa Carlos Paz RP | Sistema Oficial")
 
     if canal_envio:
         await canal_envio.send(embed=embed)
 
     await interaction.response.send_message(
-        "✅ Calificación enviada correctamente.",
+        "✅ Tu calificación fue registrada correctamente.",
         ephemeral=True
     )
 
 # ===============================
-# RESTO DEL SISTEMA DE TICKETS
+# ===============================
+# ⚠️ TU SISTEMA DE TICKETS ORIGINAL (SIN CAMBIOS)
+# ===============================
 # ===============================
 
 class VerTicketView(discord.ui.View):
@@ -292,6 +331,7 @@ class TicketSelect(discord.ui.Select):
         tickets_abiertos[user.id].append(tipo)
 
         categoria = guild.get_channel(TICKET_CATEGORY_ID)
+
         nombre_canal = f"{tipo.lower().replace(' ', '-')}-{user.name}"
 
         canal = await guild.create_text_channel(
