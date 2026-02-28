@@ -1,4 +1,4 @@
-import discord 
+import discord
 from discord.ext import commands
 import os
 import asyncio
@@ -35,20 +35,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tickets_abiertos = {}
 
 # ===============================
-# SISTEMA CALIFICACIONES
-# ===============================
-
-def cargar_datos():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def guardar_datos(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-# ===============================
 # READY
 # ===============================
 
@@ -68,7 +54,7 @@ async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
 
 # ===============================
-# SISTEMA TICKETS COMPLETO
+# VER TICKET BUTTON
 # ===============================
 
 class VerTicketView(discord.ui.View):
@@ -134,9 +120,13 @@ class MotivoSelect(discord.ui.Select):
         except:
             pass
 
+        # 🔥 ELIMINAR CORRECTAMENTE DEL SISTEMA
         if self.creador.id in tickets_abiertos:
             if self.tipo in tickets_abiertos[self.creador.id]:
                 tickets_abiertos[self.creador.id].remove(self.tipo)
+
+            if len(tickets_abiertos[self.creador.id]) == 0:
+                del tickets_abiertos[self.creador.id]
 
         embed_close = discord.Embed(
             description=f"🔒 Ticket cerrado por {staff.mention}\nMotivo: **{motivo}**\n\nEl canal se eliminará en 5 segundos.",
@@ -163,8 +153,26 @@ class TicketButtons(discord.ui.View):
         self.tipo = tipo
         self.claimed_by = None
 
+    @discord.ui.button(label="🔎 Ver DNI", style=discord.ButtonStyle.blurple)
+    async def ver_dni(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        embed = discord.Embed(
+            title="🪪 Información del Usuario",
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(name="Usuario", value=self.creador.mention)
+        embed.add_field(name="ID", value=self.creador.id)
+        embed.add_field(
+            name="Cuenta creada",
+            value=f"<t:{int(self.creador.created_at.timestamp())}:R>"
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @discord.ui.button(label="🔒 Cerrar Ticket", style=discord.ButtonStyle.red)
     async def cerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
+
         await interaction.response.send_message(
             "Selecciona el motivo del cierre:",
             view=MotivoView(self.creador, self.tipo, self.claimed_by),
@@ -174,7 +182,6 @@ class TicketButtons(discord.ui.View):
     @discord.ui.button(label="📌 Reclamar Ticket", style=discord.ButtonStyle.green)
     async def reclamar(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        # 🔒 SOLO ROL 1466245030334435398 PUEDE RECLAMAR
         if STAFF_ROLE_ID_2 not in [role.id for role in interaction.user.roles]:
             await interaction.response.send_message(
                 "❌ No tienes permiso para reclamar este ticket.",
@@ -190,22 +197,6 @@ class TicketButtons(discord.ui.View):
             return
 
         self.claimed_by = interaction.user
-        guild = interaction.guild
-
-        alto_mando = guild.get_role(ALTO_MANDO_ROLE_ID)
-        staff1 = guild.get_role(STAFF_ROLE_ID_1)
-        staff2 = guild.get_role(STAFF_ROLE_ID_2)
-
-        if staff1:
-            await interaction.channel.set_permissions(staff1, send_messages=False)
-
-        if staff2:
-            await interaction.channel.set_permissions(staff2, send_messages=False)
-
-        await interaction.channel.set_permissions(interaction.user, send_messages=True)
-
-        if alto_mando:
-            await interaction.channel.set_permissions(alto_mando, send_messages=True)
 
         embed = discord.Embed(
             description=f"📌 Ticket reclamado por {interaction.user.mention}",
@@ -263,9 +254,6 @@ class TicketSelect(discord.ui.Select):
         await canal.set_permissions(guild.default_role, read_messages=False)
         await canal.set_permissions(user, read_messages=True, send_messages=True)
 
-        staff_role_1 = guild.get_role(STAFF_ROLE_ID_1)
-        staff_role_2 = guild.get_role(STAFF_ROLE_ID_2)
-
         embed = discord.Embed(
             title=f"🎫 Ticket - {tipo}",
             description="Un miembro del staff te atenderá pronto.",
@@ -274,11 +262,7 @@ class TicketSelect(discord.ui.Select):
 
         botones = TicketButtons(user, tipo)
 
-        await canal.send(
-            content=f"{staff_role_1.mention if staff_role_1 else ''} {staff_role_2.mention if staff_role_2 else ''}",
-            embed=embed,
-            view=botones
-        )
+        await canal.send(embed=embed, view=botones)
 
         view = VerTicketView(canal)
 
