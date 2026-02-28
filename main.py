@@ -18,10 +18,10 @@ STAFF_ROLE_ID_2 = 1466245030334435398
 
 ALTO_MANDO_ROLE_ID = 1476595202813857857
 
-# 🎯 CONFIG CALIFICACIONES
 CANAL_COMANDO_ID = 1466231866041307187
 CANAL_CALIFICACIONES_ID = 1466240831609638923
 ROL_STAFF_CALIFICABLE = 1466245030334435398
+
 DATA_FILE = "calificaciones.json"
 
 # ===============================
@@ -35,7 +35,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tickets_abiertos = {}
 
 # ===============================
-# SISTEMA JSON CALIFICACIONES
+# SISTEMA CALIFICACIONES
 # ===============================
 
 def cargar_datos():
@@ -64,13 +64,7 @@ async def cambiar_estado():
 @bot.event
 async def on_ready():
     cambiar_estado.start()
-
-    try:
-        synced = await bot.tree.sync()
-        print(f"🔁 Slash commands sincronizados: {len(synced)}")
-    except Exception as e:
-        print(e)
-
+    await bot.tree.sync()
     print(f"✅ Bot conectado como {bot.user}")
 
 # ===============================
@@ -96,17 +90,11 @@ async def calificar_staff(interaction: discord.Interaction,
                           nota: str):
 
     if interaction.channel.id != CANAL_COMANDO_ID:
-        await interaction.response.send_message(
-            "❌ Este comando solo puede usarse en el canal correspondiente.",
-            ephemeral=True
-        )
+        await interaction.response.send_message("❌ Usa este comando en el canal correspondiente.", ephemeral=True)
         return
 
-    if ROL_STAFF_CALIFICABLE not in [role.id for role in staff.roles]:
-        await interaction.response.send_message(
-            "❌ Solo puedes calificar a miembros oficiales del staff.",
-            ephemeral=True
-        )
+    if ROL_STAFF_CALIFICABLE not in [r.id for r in staff.roles]:
+        await interaction.response.send_message("❌ Solo puedes calificar staff oficiales.", ephemeral=True)
         return
 
     data = cargar_datos()
@@ -121,62 +109,33 @@ async def calificar_staff(interaction: discord.Interaction,
 
     total = data[staff_id]["total"]
     promedio = round(data[staff_id]["suma"] / total, 2)
-    estrellas = "⭐" * calificacion.value
 
-    canal_envio = interaction.guild.get_channel(CANAL_CALIFICACIONES_ID)
+    estrellas = "⭐" * calificacion.value
 
     embed = discord.Embed(
         title="📋 Registro Oficial de Evaluación",
-        description=(
-            "━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 **Usuario:** {interaction.user.mention}\n"
-            f"🛡️ **Staff Evaluado:** {staff.mention}\n"
-            f"🌟 **Calificación:** {estrellas}\n"
-            "━━━━━━━━━━━━━━━━━━━━━━"
-        ),
         color=0x00BFFF
     )
 
+    embed.add_field(name="Usuario", value=interaction.user.mention, inline=False)
+    embed.add_field(name="Staff Evaluado", value=staff.mention, inline=False)
+    embed.add_field(name="Calificación", value=estrellas, inline=False)
+    embed.add_field(name="Opinión", value=f"```{nota}```", inline=False)
     embed.add_field(
-        name="💬 Opinión del Usuario",
-        value=f"```{nota}```",
+        name="Estadísticas",
+        value=f"Total: {total}\nPromedio: {promedio}/5",
         inline=False
     )
 
-    embed.add_field(
-        name="📊 Estadísticas del Staff",
-        value=(
-            f"📝 Total de evaluaciones: **{total}**\n"
-            f"📈 Promedio actual: **{promedio}/5**"
-        ),
-        inline=False
-    )
+    canal = interaction.guild.get_channel(CANAL_CALIFICACIONES_ID)
+    if canal:
+        await canal.send(embed=embed)
 
-    embed.set_thumbnail(url=staff.display_avatar.url)
-    embed.set_footer(text="VCP • Villa Carlos Paz RP | Sistema Oficial")
-
-    if canal_envio:
-        await canal_envio.send(embed=embed)
-
-    await interaction.response.send_message(
-        "✅ Tu calificación fue registrada correctamente.",
-        ephemeral=True
-    )
+    await interaction.response.send_message("✅ Calificación registrada.", ephemeral=True)
 
 # ===============================
-# SISTEMA DE TICKETS
+# SISTEMA TICKETS
 # ===============================
-
-class VerTicketView(discord.ui.View):
-    def __init__(self, canal):
-        super().__init__(timeout=60)
-        self.add_item(
-            discord.ui.Button(
-                label="🔎 Ver Ticket",
-                style=discord.ButtonStyle.link,
-                url=canal.jump_url
-            )
-        )
 
 class TicketButtons(discord.ui.View):
     def __init__(self, creador, tipo):
@@ -187,16 +146,13 @@ class TicketButtons(discord.ui.View):
 
     @discord.ui.button(label="🔒 Cerrar Ticket", style=discord.ButtonStyle.red)
     async def cerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "Selecciona el motivo del cierre:",
-            ephemeral=True
-        )
+        await interaction.channel.delete()
 
     @discord.ui.button(label="📌 Reclamar Ticket", style=discord.ButtonStyle.green)
     async def reclamar(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        # 🔒 SOLO ROL 1466245030334435398 PUEDE RECLAMAR
-        if STAFF_ROLE_ID_2 not in [role.id for role in interaction.user.roles]:
+        # 🔒 SOLO EL ROL 1466245030334435398 PUEDE RECLAMAR
+        if STAFF_ROLE_ID_2 not in [r.id for r in interaction.user.roles]:
             await interaction.response.send_message(
                 "❌ No tienes permiso para reclamar este ticket.",
                 ephemeral=True
@@ -218,6 +174,69 @@ class TicketButtons(discord.ui.View):
         )
 
         await interaction.response.send_message(embed=embed)
+
+class TicketSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Soporte General", emoji="🛠️"),
+            discord.SelectOption(label="Reclamar Beneficios", emoji="🎁"),
+            discord.SelectOption(label="Reportar Usuario", emoji="🚨"),
+            discord.SelectOption(label="Reportar Moderador", emoji="⚖️")
+        ]
+
+        super().__init__(
+            placeholder="🎟️ Selecciona el tipo de ticket...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+
+        guild = interaction.guild
+        user = interaction.user
+        tipo = self.values[0]
+
+        categoria = guild.get_channel(TICKET_CATEGORY_ID)
+
+        nombre_canal = f"{tipo.lower().replace(' ', '-')}-{user.name}"
+
+        canal = await guild.create_text_channel(
+            name=nombre_canal,
+            category=categoria
+        )
+
+        await canal.set_permissions(guild.default_role, read_messages=False)
+        await canal.set_permissions(user, read_messages=True, send_messages=True)
+
+        embed = discord.Embed(
+            title=f"🎫 Ticket - {tipo}",
+            description="Un miembro del staff te atenderá pronto.",
+            color=discord.Color.green()
+        )
+
+        await canal.send(embed=embed, view=TicketButtons(user, tipo))
+
+        await interaction.response.send_message("🎫 Ticket creado correctamente!", ephemeral=True)
+
+class TicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(TicketSelect())
+
+# ===============================
+# COMANDO PANEL
+# ===============================
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def panel(ctx):
+    embed = discord.Embed(
+        title="🎟️ Centro de Soporte",
+        description="Selecciona una categoría para abrir un ticket, Recuerda no abrir un ticket sin motivo.",
+        color=discord.Color.blue()
+    )
+    await ctx.send(embed=embed, view=TicketView())
 
 # ===============================
 # RUN
