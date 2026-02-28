@@ -261,8 +261,49 @@ class TicketButtons(discord.ui.View):
             ephemeral=True
         )
 
-    @discord.ui.button(label="📌 Reclamar Ticket", style=discord.ButtonStyle.green)
-    async def reclamar(self, interaction: discord.Interaction, button: discord.ui.Button):
+@discord.ui.button(label="📌 Reclamar Ticket", style=discord.ButtonStyle.green)
+async def reclamar(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    # 🔒 Verificar que tenga el rol permitido
+    if STAFF_ROLE_ID_2 not in [role.id for role in interaction.user.roles]:
+        await interaction.response.send_message(
+            "❌ No tienes permiso para reclamar este ticket.",
+            ephemeral=True
+        )
+        return
+
+    # ⚠️ Si ya fue reclamado
+    if self.claimed_by:
+        await interaction.response.send_message(
+            f"⚠️ Ya fue reclamado por {self.claimed_by.mention}",
+            ephemeral=True
+        )
+        return
+
+    self.claimed_by = interaction.user
+    guild = interaction.guild
+
+    alto_mando = guild.get_role(ALTO_MANDO_ROLE_ID)
+    staff1 = guild.get_role(STAFF_ROLE_ID_1)
+    staff2 = guild.get_role(STAFF_ROLE_ID_2)
+
+    if staff1:
+        await interaction.channel.set_permissions(staff1, send_messages=False)
+
+    if staff2:
+        await interaction.channel.set_permissions(staff2, send_messages=False)
+
+    await interaction.channel.set_permissions(interaction.user, send_messages=True)
+
+    if alto_mando:
+        await interaction.channel.set_permissions(alto_mando, send_messages=True)
+
+    embed = discord.Embed(
+        description=f"📌 Ticket reclamado por {interaction.user.mention}",
+        color=discord.Color.gold()
+    )
+
+    await interaction.response.send_message(embed=embed)
 
         if self.claimed_by:
             await interaction.response.send_message(
