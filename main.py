@@ -212,11 +212,11 @@ class VerTicketButton(discord.ui.Button):
 @commands.has_permissions(administrator=True)
 async def panel(ctx):
 
-    embed = discord.Embed(
-        title="🎟️ Sistema de Tickets",
-        description="Selecciona una categoría para abrir un ticket.\nNuestro equipo te asistirá lo antes posible.",
-        color=discord.Color.white()
-    )
+embed = discord.Embed(
+    title="🎟️ Sistema de Tickets",
+    description="Selecciona una categoría para abrir un ticket.\nNuestro equipo te asistirá lo antes posible.",
+    color=discord.Color.from_rgb(255, 255, 255)
+)
 
     embed.set_footer(text="Dev Neiwito! • Tickets System")
 
