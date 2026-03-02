@@ -94,7 +94,7 @@ class TicketSelect(discord.ui.Select):
         embed = discord.Embed(
             title="🎫 Ticket Abierto",
             description=f"Bienvenido {interaction.user.mention}\n\nUn miembro del staff te atenderá pronto.",
-            color=discord.Color.white()
+            color=0xffffff
         )
         embed.set_footer(text="Dev Neiwito! • Tickets System")
 
@@ -144,7 +144,7 @@ class TicketButtons(discord.ui.View):
                 embed = discord.Embed(
                     title="🎯 Ticket Asignado",
                     description=f"Tu ticket fue asignado al staff **{interaction.user.name}**.\n\nEn breve recibirás asistencia personalizada.",
-                    color=discord.Color.blurple()
+                    color=0x5865F2
                 )
                 embed.set_footer(text="Dev Neiwito! • Tickets System")
 
@@ -173,7 +173,7 @@ class TicketButtons(discord.ui.View):
                 embed = discord.Embed(
                     title="🔒 Ticket Cerrado",
                     description=f"Tu ticket fue cerrado por **{interaction.user.name}**.\n\nSi necesitas más ayuda puedes abrir uno nuevo.",
-                    color=discord.Color.red()
+                    color=0xED4245
                 )
                 embed.set_footer(text="Dev Neiwito! • Tickets System")
 
@@ -212,12 +212,11 @@ class VerTicketButton(discord.ui.Button):
 @commands.has_permissions(administrator=True)
 async def panel(ctx):
 
-embed = discord.Embed(
-    title="🎟️ Sistema de Tickets",
-    description="Selecciona una categoría para abrir un ticket.\nNuestro equipo te asistirá lo antes posible.",
-    color=discord.Color.from_rgb(255, 255, 255)
-)
-
+    embed = discord.Embed(
+        title="🎟️ Sistema de Tickets",
+        description="Selecciona una categoría para abrir un ticket.\nNuestro equipo te asistirá lo antes posible.",
+        color=0xffffff
+    )
     embed.set_footer(text="Dev Neiwito! • Tickets System")
 
     await ctx.send(embed=embed, view=TicketPanel())
