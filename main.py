@@ -2,10 +2,11 @@ import discord
 from discord.ext import commands
 import json
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
 TOKEN = os.getenv("TOKEN")
+
+if not TOKEN:
+    raise ValueError("No se encontró el TOKEN en las variables de entorno.")
 
 STAFF_ROLE_ID = 1466245030334435398
 
@@ -13,7 +14,7 @@ intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # =========================
-# 📂 JSON DATABASE
+# 📂 BASE DE DATOS JSON
 # =========================
 
 def cargar_datos():
@@ -55,7 +56,7 @@ class TicketSelect(discord.ui.Select):
 
         # 🔒 ANTI DUPLICADO
         if str(interaction.user.id) in data["tickets"]:
-            canal_id = data["tickets"][str(interaction.user.id)]
+            canal_id = data["tickets"][str(interaction.user.id)]["canal_id"]
             canal = interaction.guild.get_channel(canal_id)
 
             view = discord.ui.View()
@@ -140,9 +141,8 @@ class TicketButtons(discord.ui.View):
 
                 usuario = await bot.fetch_user(int(user_id))
 
-                # 📩 DM PROFESIONAL
                 embed = discord.Embed(
-                    title="🎯 Ticket Reclamado",
+                    title="🎯 Ticket Asignado",
                     description=f"Tu ticket fue asignado al staff **{interaction.user.name}**.\n\nEn breve recibirás asistencia personalizada.",
                     color=discord.Color.blurple()
                 )
@@ -170,7 +170,6 @@ class TicketButtons(discord.ui.View):
 
                 usuario = await bot.fetch_user(int(user_id))
 
-                # 📩 DM CIERRE
                 embed = discord.Embed(
                     title="🔒 Ticket Cerrado",
                     description=f"Tu ticket fue cerrado por **{interaction.user.name}**.\n\nSi necesitas más ayuda puedes abrir uno nuevo.",
@@ -227,6 +226,6 @@ async def panel(ctx):
 
 @bot.event
 async def on_ready():
-    print(f"Bot conectado como {bot.user}")
+    print(f"✅ Bot conectado como {bot.user}")
 
 bot.run(TOKEN)
