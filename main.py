@@ -3,10 +3,15 @@ from discord.ext import commands
 from discord import app_commands
 import os
 import json
-from dotenv import load_dotenv
 
-load_dotenv()
+# =========================
+# TOKEN (VARIABLE DE ENTORNO)
+# =========================
+
 TOKEN = os.getenv("TOKEN")
+
+if not TOKEN:
+    raise ValueError("No se encontró el TOKEN en las variables de entorno.")
 
 # =========================
 # CONFIG
@@ -17,6 +22,8 @@ ADMIN_RESET_ROLE = 1466440467204800597
 
 CANAL_CALIFICAR = 1466231866041307187
 CANAL_RESULTADOS = 1466240831609638923
+
+TICKET_CATEGORY_ID = 1466491475436245220
 
 DATA_FILE = "tickets_data.json"
 
@@ -49,6 +56,136 @@ def save_data(data):
 data = load_data()
 
 # =========================
+# PANEL TICKETS
+# =========================
+
+class TicketSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="Soporte General", description="Consultas generales."),
+            discord.SelectOption(label="Reportar Usuario", description="Reportar un miembro."),
+            discord.SelectOption(label="Reportar Moderador", description="Reportar un staff."),
+            discord.SelectOption(label="Reclamar Beneficios", description="Reclamar recompensas."),
+            discord.SelectOption(label="Soporte Técnico", description="Errores o bugs técnicos.")
+        ]
+        super().__init__(placeholder="Selecciona una categoría...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+
+        if str(interaction.user.id) in data["open_tickets"]:
+            return await interaction.response.send_message(
+                "❌ Ya tienes un ticket abierto.",
+                ephemeral=True
+            )
+
+        data["count"] += 1
+        ticket_number = f"{data['count']:03}"
+        channel_name = f"ticket-{ticket_number}"
+
+        category = interaction.guild.get_channel(TICKET_CATEGORY_ID)
+
+        overwrites = {
+            interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            interaction.guild.get_role(STAFF_ROLE_ID): discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        }
+
+        channel = await interaction.guild.create_text_channel(
+            name=channel_name,
+            overwrites=overwrites,
+            category=category
+        )
+
+        data["open_tickets"][str(interaction.user.id)] = channel.id
+        save_data(data)
+
+        embed = discord.Embed(
+            title="🎫 Ticket Abierto",
+            description=f"Bienvenido {interaction.user.mention}\n\nUn staff te atenderá pronto.",
+            color=0x2b2d31
+        )
+        embed.set_footer(text="Dev Neiwito! • Tickets System")
+
+        await channel.send(embed=embed, view=TicketButtons())
+
+        await interaction.response.send_message(
+            f"✅ Ticket creado: {channel.mention}",
+            ephemeral=True
+        )
+
+class TicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(TicketSelect())
+
+@bot.command()
+async def panel(ctx):
+    embed = discord.Embed(
+        title="🎟️ Sistema de Tickets",
+        description="Selecciona una categoría para abrir un ticket.\n\nNuestro equipo responderá lo antes posible.",
+        color=0x2b2d31
+    )
+    embed.set_footer(text="Dev Neiwito! • Tickets System")
+
+    await ctx.send(embed=embed, view=TicketView())
+
+# =========================
+# BOTONES TICKET
+# =========================
+
+class TicketButtons(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Reclamar Ticket", style=discord.ButtonStyle.primary)
+    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        if STAFF_ROLE_ID not in [role.id for role in interaction.user.roles]:
+            return await interaction.response.send_message("❌ No eres staff.", ephemeral=True)
+
+        embed = discord.Embed(
+            title="📌 Ticket Reclamado",
+            description=f"Reclamado por {interaction.user.mention}",
+            color=0x5865F2
+        )
+        await interaction.channel.send(embed=embed)
+
+        await interaction.response.defer()
+
+    @discord.ui.button(label="Cerrar Ticket", style=discord.ButtonStyle.danger)
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        if STAFF_ROLE_ID not in [role.id for role in interaction.user.roles]:
+            return await interaction.response.send_message("❌ No eres staff.", ephemeral=True)
+
+        await interaction.response.send_message("✏️ Escribe el motivo de cierre:", ephemeral=True)
+
+        def check(m):
+            return m.author == interaction.user and m.channel == interaction.channel
+
+        try:
+            msg = await bot.wait_for("message", timeout=60, check=check)
+            motivo = msg.content
+        except:
+            return await interaction.channel.send("❌ Tiempo agotado.")
+
+        embed = discord.Embed(
+            title="🔒 Ticket Cerrado",
+            description=f"**Cerrado por:** {interaction.user.mention}\n**Motivo:** {motivo}",
+            color=0xED4245
+        )
+        await interaction.channel.send(embed=embed)
+
+        try:
+            user_id = [k for k,v in data["open_tickets"].items() if v == interaction.channel.id][0]
+            del data["open_tickets"][user_id]
+            save_data(data)
+        except:
+            pass
+
+        await interaction.channel.delete(delay=5)
+
+# =========================
 # SLASH: CALIFICAR STAFF
 # =========================
 
@@ -66,7 +203,6 @@ async def calificar_staff(
             ephemeral=True
         )
 
-    # Verificar que tenga rol staff
     if STAFF_ROLE_ID not in [r.id for r in staff.roles]:
         return await interaction.response.send_message(
             "❌ Solo puedes calificar miembros del Staff.",
@@ -75,13 +211,11 @@ async def calificar_staff(
 
     staff_id = str(staff.id)
 
-    # Guardar calificación
     if staff_id not in data["staff_ratings"]:
         data["staff_ratings"][staff_id] = []
 
     data["staff_ratings"][staff_id].append(calificacion)
 
-    # Calcular promedio
     ratings = data["staff_ratings"][staff_id]
     promedio = sum(ratings) / len(ratings)
 
@@ -90,8 +224,7 @@ async def calificar_staff(
     canal = bot.get_channel(CANAL_RESULTADOS)
 
     embed = discord.Embed(
-        title="📊 Nueva Evaluación de Staff",
-        description="Sistema de valoración automática",
+        title="📊 Nueva Evaluación",
         color=0x5865F2
     )
 
@@ -100,13 +233,12 @@ async def calificar_staff(
     embed.add_field(name="⭐ Calificación", value=f"{calificacion}/10", inline=True)
     embed.add_field(name="📈 Promedio Actual", value=f"{promedio:.2f}/10", inline=True)
     embed.add_field(name="📝 Opinión", value=nota, inline=False)
-
     embed.set_footer(text=f"Total de evaluaciones: {len(ratings)} • Dev Neiwito!")
 
     await canal.send(embed=embed)
 
     await interaction.response.send_message(
-        "✅ Tu evaluación fue enviada correctamente.",
+        "✅ Evaluación enviada.",
         ephemeral=True
     )
 
@@ -138,6 +270,8 @@ async def reset_count(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     await tree.sync()
+    bot.add_view(TicketView())
+    bot.add_view(TicketButtons())
     print(f"Bot conectado como {bot.user}")
 
 bot.run(TOKEN)
