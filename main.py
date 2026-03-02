@@ -92,7 +92,13 @@ Un miembro del staff atenderá tu solicitud pronto.
             color=0x2b2d31
         )
 
-        await channel.send(embed=embed, view=TicketButtons())
+        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+
+        await channel.send(
+            content=staff_role.mention,
+            embed=embed,
+            view=TicketButtons()
+        )
 
         await interaction.response.send_message(
             f"✅ Tu ticket fue creado: {channel.mention}",
@@ -129,7 +135,6 @@ class TicketButtons(discord.ui.View):
         data["claims"][channel_id] = interaction.user.id
         save_data(data)
 
-        # Ocultar a otros staff
         staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
         for member in staff_role.members:
             if member.id != interaction.user.id:
