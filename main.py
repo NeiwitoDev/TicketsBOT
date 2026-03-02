@@ -1,8 +1,20 @@
 import discord
 from discord.ext import commands
-from discord.ui import View, Button
+from discord.ui import View
 import json
 import os
+from dotenv import load_dotenv
+
+# =========================
+# CARGAR .ENV
+# =========================
+
+load_dotenv()
+TOKEN = os.getenv("TOKEN")
+
+# =========================
+# INTENTS
+# =========================
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -10,31 +22,42 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ------------------------
+# =========================
 # SISTEMA PERSISTENTE
-# ------------------------
+# =========================
+
+COUNTER_FILE = "ticket_counter.json"
 
 def get_ticket_number():
-    with open("ticket_counter.json", "r") as f:
+    if not os.path.exists(COUNTER_FILE):
+        with open(COUNTER_FILE, "w") as f:
+            json.dump({"last_ticket": 0}, f)
+
+    with open(COUNTER_FILE, "r") as f:
         data = json.load(f)
 
     data["last_ticket"] += 1
 
-    with open("ticket_counter.json", "w") as f:
+    with open(COUNTER_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
     return data["last_ticket"]
 
-# ------------------------
-# BOTÓN CREAR TICKET
-# ------------------------
+# =========================
+# CREAR TICKET
+# =========================
 
 class TicketPanel(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="ver-ticket", style=discord.ButtonStyle.green, emoji="🎫", custom_id="create_ticket")
-    async def create_ticket(self, interaction: discord.Interaction, button: Button):
+    @discord.ui.button(
+        label="ver-ticket",
+        style=discord.ButtonStyle.green,
+        emoji="🎫",
+        custom_id="create_ticket_button"
+    )
+    async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         ticket_number = get_ticket_number()
         ticket_name = f"TICKET-{ticket_number:03d}"
@@ -47,38 +70,45 @@ class TicketPanel(View):
             guild.me: discord.PermissionOverwrite(view_channel=True)
         }
 
+        category = interaction.channel.category
+
         channel = await guild.create_text_channel(
             name=ticket_name,
             overwrites=overwrites,
-            category=interaction.channel.category
+            category=category
         )
 
         embed = discord.Embed(
-            title="📩 Ticket Creado Correctamente",
-            description=f"{interaction.user.mention}, tu ticket fue abierto con éxito.\n\nUn miembro del staff te atenderá pronto.",
+            title="📩 Ticket Creado",
+            description=f"{interaction.user.mention} tu ticket fue creado correctamente.\n\nUn staff te atenderá pronto.",
             color=0x2ecc71
         )
 
-        embed.add_field(name="🆔 Número", value=f"`{ticket_name}`", inline=True)
-        embed.set_footer(text="Sistema de Tickets • Stars Solutions Studios")
+        embed.add_field(name="🆔 ID", value=f"`{ticket_name}`")
+        embed.set_footer(text="Stars Solutions Studios • Sistema de Soporte")
 
         await channel.send(embed=embed, view=CloseTicket())
 
         await interaction.response.send_message(
-            f"✅ Tu ticket fue creado: {channel.mention}",
+            f"✅ Ticket creado: {channel.mention}",
             ephemeral=True
         )
 
-# ------------------------
-# BOTÓN CERRAR TICKET
-# ------------------------
+# =========================
+# CERRAR TICKET
+# =========================
 
 class CloseTicket(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Cerrar Ticket", style=discord.ButtonStyle.red, emoji="🔒", custom_id="close_ticket")
-    async def close_ticket(self, interaction: discord.Interaction, button: Button):
+    @discord.ui.button(
+        label="Cerrar Ticket",
+        style=discord.ButtonStyle.red,
+        emoji="🔒",
+        custom_id="close_ticket_button"
+    )
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         user = interaction.user
         channel = interaction.channel
@@ -91,9 +121,9 @@ class CloseTicket(View):
         await interaction.response.send_message("🗑 Cerrando ticket...", ephemeral=True)
         await channel.delete()
 
-# ------------------------
-# COMANDO PARA ENVIAR PANEL
-# ------------------------
+# =========================
+# PANEL
+# =========================
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -103,26 +133,32 @@ async def panel(ctx):
         title="🎟 Sistema de Tickets",
         description=(
             "¿Necesitas ayuda?\n\n"
-            "Presiona el botón **ver-ticket** para abrir un ticket privado.\n\n"
-            "📌 Nuestro equipo responderá lo antes posible."
+            "Presiona el botón **ver-ticket** para abrir un ticket privado."
         ),
         color=0x3498db
     )
 
-    embed.add_field(name="⏱ Tiempo de Respuesta", value="Entre 5 a 30 minutos.", inline=False)
-    embed.add_field(name="📜 Reglas", value="No abuses del sistema o será sancionado.", inline=False)
-    embed.set_footer(text="Stars Solutions Studios • Soporte Oficial")
+    embed.add_field(name="⏱ Tiempo estimado", value="5 - 30 minutos", inline=False)
+    embed.add_field(name="📜 Reglas", value="No abuses del sistema.", inline=False)
+    embed.set_footer(text="Stars Solutions Studios")
 
     await ctx.send(embed=embed, view=TicketPanel())
 
-# ------------------------
-# PERSISTENCIA AL REINICIAR
-# ------------------------
+# =========================
+# READY
+# =========================
 
 @bot.event
 async def on_ready():
     bot.add_view(TicketPanel())
     bot.add_view(CloseTicket())
-    print(f"Bot conectado como {bot.user}")
+    print(f"✅ Bot listo como {bot.user}")
 
-bot.run("TU_TOKEN_AQUI")
+# =========================
+# INICIAR BOT
+# =========================
+
+if TOKEN is None:
+    print("❌ ERROR: No se encontró el TOKEN en el .env")
+else:
+    bot.run(TOKEN)
