@@ -99,6 +99,8 @@ Un miembro del staff atenderá tu solicitud pronto.
             ephemeral=True
         )
 
+# ================= BOTONES =================
+
 class TicketButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -109,12 +111,33 @@ class TicketButtons(discord.ui.View):
         if STAFF_ROLE_ID not in [r.id for r in interaction.user.roles]:
             return await interaction.response.send_message("❌ Solo staff.", ephemeral=True)
 
-        data["claims"][str(interaction.channel.id)] = interaction.user.id
+        channel_id = str(interaction.channel.id)
+
+        if channel_id in data["claims"]:
+
+            if data["claims"][channel_id] == interaction.user.id:
+                return await interaction.response.send_message(
+                    "⚠️ Ya reclamaste este ticket.",
+                    ephemeral=True
+                )
+            else:
+                return await interaction.response.send_message(
+                    "❌ Este ticket ya está reclamado por otro staff.",
+                    ephemeral=True
+                )
+
+        data["claims"][channel_id] = interaction.user.id
         save_data(data)
+
+        # Ocultar a otros staff
+        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+        for member in staff_role.members:
+            if member.id != interaction.user.id:
+                await interaction.channel.set_permissions(member, read_messages=False)
 
         embed = discord.Embed(
             title="🎯 Ticket Reclamado",
-            description=f"Este ticket ahora está siendo atendido por {interaction.user.mention}",
+            description=f"<:staffteam:1478090615056236697> Staff asignado: {interaction.user.mention}",
             color=0x57F287
         )
 
@@ -124,7 +147,7 @@ class TicketButtons(discord.ui.View):
         if user_id:
             user = await bot.fetch_user(int(user_id))
             await user.send(embed=discord.Embed(
-                title="📩 Tu ticket fue reclamado",
+                title="📩 Tu ticket fue asignado",
                 description=f"El staff {interaction.user} está atendiendo tu caso.",
                 color=0x57F287
             ))
@@ -138,10 +161,12 @@ class TicketButtons(discord.ui.View):
             return await interaction.response.send_message("❌ Solo staff.", ephemeral=True)
 
         await interaction.response.send_message(
-            "Selecciona motivo:",
+            "Selecciona el motivo de cierre:",
             view=CloseReason(),
             ephemeral=True
         )
+
+# ================= MOTIVO =================
 
 class CloseReason(discord.ui.View):
     def __init__(self):
@@ -163,10 +188,7 @@ class CloseReason(discord.ui.View):
 
         embed = discord.Embed(
             title="🔒 Ticket Cerrado",
-            description=f"""
-Motivo: **{motivo}**
-Cerrado por: {interaction.user.mention}
-            """,
+            description=f"Motivo: **{motivo}**\nCerrado por: {interaction.user.mention}",
             color=0xED4245
         )
 
@@ -176,6 +198,9 @@ Cerrado por: {interaction.user.mention}
             user = await bot.fetch_user(int(user_id))
             await user.send(embed=embed)
             del data["open"][user_id]
+
+        if str(interaction.channel.id) in data["claims"]:
+            del data["claims"][str(interaction.channel.id)]
 
         save_data(data)
 
@@ -201,25 +226,29 @@ Selecciona una categoría.
     embed.set_footer(text="Dev Neiwito! • Tickets System")
     await ctx.send(embed=embed, view=TicketPanel())
 
-@tree.command(name="unclaim")
+@tree.command(name="unclaim", description="Libera el ticket reclamado.")
 async def unclaim(interaction: discord.Interaction):
 
-    if str(interaction.channel.id) not in data["claims"]:
+    channel_id = str(interaction.channel.id)
+
+    if channel_id not in data["claims"]:
         return await interaction.response.send_message("❌ No está reclamado.", ephemeral=True)
 
-    del data["claims"][str(interaction.channel.id)]
+    del data["claims"][channel_id]
     save_data(data)
 
-    await interaction.response.send_message("✅ Claim removido.")
+    staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+    for member in staff_role.members:
+        await interaction.channel.set_permissions(member, read_messages=True, send_messages=True)
 
-@tree.command(name="add-user")
+    await interaction.response.send_message("🔓 Ticket liberado.")
+
+@tree.command(name="add-user", description="Añade un usuario al ticket actual.")
 async def add_user(interaction: discord.Interaction, usuario: discord.Member):
-
     await interaction.channel.set_permissions(usuario, read_messages=True, send_messages=True)
+    await interaction.response.send_message(f"✅ {usuario.mention} añadido.")
 
-    await interaction.response.send_message(f"✅ {usuario.mention} añadido al ticket.")
-
-@tree.command(name="reset-count")
+@tree.command(name="reset-count", description="Reinicia el contador de tickets.")
 async def reset_count(interaction: discord.Interaction):
 
     if ADMIN_RESET_ROLE not in [r.id for r in interaction.user.roles]:
@@ -230,14 +259,19 @@ async def reset_count(interaction: discord.Interaction):
 
     await interaction.response.send_message("✅ Contador reiniciado.", ephemeral=True)
 
-@tree.command(name="calificar-staff")
-async def calificar_staff(interaction: discord.Interaction, staff: discord.Member, calificacion: int, nota: str):
+@tree.command(name="calificar-staff", description="Califica la atención de un staff.")
+async def calificar_staff(
+    interaction: discord.Interaction,
+    staff: discord.Member,
+    calificacion: app_commands.Range[int, 1, 10],
+    nota: str
+):
 
     if interaction.channel.id != CANAL_CALIFICAR:
         return await interaction.response.send_message("❌ Canal incorrecto.", ephemeral=True)
 
     if STAFF_ROLE_ID not in [r.id for r in staff.roles]:
-        return await interaction.response.send_message("❌ Solo puedes calificar staff.", ephemeral=True)
+        return await interaction.response.send_message("❌ Solo staff.", ephemeral=True)
 
     staff_id = str(staff.id)
 
@@ -246,20 +280,24 @@ async def calificar_staff(interaction: discord.Interaction, staff: discord.Membe
 
     data["ratings"][staff_id].append(calificacion)
     promedio = sum(data["ratings"][staff_id]) / len(data["ratings"][staff_id])
+    total = len(data["ratings"][staff_id])
 
     save_data(data)
 
     canal = bot.get_channel(CANAL_RESULTADOS)
 
     embed = discord.Embed(
-        title="📊 Nueva Evaluación",
+        title="📊 Nueva Evaluación de Staff",
         color=0x5865F2
     )
 
-    embed.add_field(name="Staff", value=staff.mention, inline=False)
-    embed.add_field(name="Calificación", value=f"{calificacion}/10")
-    embed.add_field(name="Promedio", value=f"{promedio:.2f}/10")
-    embed.add_field(name="Opinión", value=nota, inline=False)
+    embed.add_field(name="<:staffteam:1478090615056236697> Staff", value=staff.mention, inline=False)
+    embed.add_field(name="<:miembro:1478090498076835910> Usuario", value=interaction.user.mention, inline=True)
+    embed.add_field(name="⭐ Calificación", value=f"{calificacion}/10", inline=True)
+    embed.add_field(name="<:Soportegeneral:1478091664596664541> Promedio", value=f"{promedio:.2f}/10 ({total})", inline=False)
+    embed.add_field(name="📝 Opinión", value=nota, inline=False)
+
+    embed.set_footer(text="Dev Neiwito! • Sistema de Evaluaciones")
 
     await canal.send(embed=embed)
 
