@@ -1,5 +1,6 @@
 from flask import Flask
 from threading import Thread
+import os
 
 app = Flask(__name__)
 
@@ -8,7 +9,7 @@ def home():
     return "Bot activo"
 
 def run():
-    port = int(os.environ.get("PORT", 10000))  
+    port = int(os.environ.get("PORT", 10000))  # 👈 ESTO ES LO IMPORTANTE
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
