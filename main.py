@@ -63,7 +63,7 @@ def setup_status(bot):
 
     current = 0
 
-    @tasks.loop(seconds=5)
+    @tasks.loop(seconds=15)
     async def change_status():
         nonlocal current
         await bot.change_presence(activity=statuses[current])
