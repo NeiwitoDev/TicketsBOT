@@ -13,12 +13,12 @@ def run():
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    t = Thread(target=run)
-    t.start()
+    Thread(target=run).start()
+
+# ================= DISCORD =================
 
 import discord
 from discord.ext import commands, tasks
-from discord import app_commands
 import json
 
 TOKEN = os.getenv("TOKEN")
@@ -30,14 +30,13 @@ DATA_FILE = "data.json"
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
 
 # ================= DATA =================
 
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {"count": 0, "open": {}, "claims": {}, "ratings": {}}
-    with open(DATA_FILE, "r") as f:
+        return {"count": 0, "open": {}}
+    with open(DATA_FILE) as f:
         return json.load(f)
 
 def save_data(d):
@@ -48,25 +47,24 @@ data = load_data()
 
 # ================= STATUS =================
 
-def setup_status(bot):
+def setup_status():
     statuses = [
         discord.Activity(type=discord.ActivityType.watching, name="↪ developer neiwito."),
         discord.Game(name="↪ VCPRP")
     ]
-
-    current = 0
+    i = 0
 
     @tasks.loop(seconds=15)
-    async def change_status():
-        nonlocal current
-        await bot.change_presence(activity=statuses[current])
-        current = (current + 1) % len(statuses)
+    async def loop_status():
+        nonlocal i
+        await bot.change_presence(activity=statuses[i])
+        i = (i + 1) % len(statuses)
 
-    @change_status.before_loop
+    @loop_status.before_loop
     async def before():
         await bot.wait_until_ready()
 
-    change_status.start()
+    loop_status.start()
 
 # ================= PANEL =================
 
@@ -75,7 +73,7 @@ class TicketPanel(discord.ui.View):
         super().__init__(timeout=None)
 
     @discord.ui.select(
-        placeholder="Selecciona una categoría",
+        placeholder="📂 Selecciona una categoría",
         custom_id="ticket_select",
         options=[
             discord.SelectOption(label="Soporte General", emoji=discord.PartialEmoji(name="Soportegeneral", id=1478091664596664541)),
@@ -85,26 +83,23 @@ class TicketPanel(discord.ui.View):
             discord.SelectOption(label="Reclamar Beneficios", emoji=discord.PartialEmoji(name="Booster", id=1478090731288662186))
         ]
     )
-    async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
-
+    async def callback(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
 
         if user_id in data["open"]:
             return await interaction.response.send_message("❌ Ya tienes un ticket abierto.", ephemeral=True)
 
         data["count"] += 1
-        ticket_number = f"{data['count']:03d}"
-
-        overwrites = {
-            interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            interaction.guild.get_role(STAFF_ROLE_ID): discord.PermissionOverwrite(read_messages=True, send_messages=True)
-        }
+        ticket_id = f"{data['count']:03d}"
 
         channel = await interaction.guild.create_text_channel(
-            name=f"ticket-{ticket_number}",
-            overwrites=overwrites,
-            category=interaction.guild.get_channel(CATEGORY_ID)
+            name=f"ticket-{ticket_id}",
+            category=interaction.guild.get_channel(CATEGORY_ID),
+            overwrites={
+                interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                interaction.guild.get_role(STAFF_ROLE_ID): discord.PermissionOverwrite(read_messages=True)
+            }
         )
 
         data["open"][user_id] = channel.id
@@ -113,12 +108,12 @@ class TicketPanel(discord.ui.View):
         embed = discord.Embed(
             title="🎟 Ticket Abierto",
             description=f"""
-Bienvenido {interaction.user.mention}
+👋 Hola {interaction.user.mention}
 
-Un miembro del staff atenderá tu solicitud pronto.
+📌 Un miembro del staff te atenderá pronto.
 
-📌 Categoría: **{select.values[0]}**
-            """,
+🗂 Categoría: **{interaction.data['values'][0]}**
+""",
             color=0x2b2d31
         )
 
@@ -128,7 +123,7 @@ Un miembro del staff atenderá tu solicitud pronto.
             view=TicketButtons()
         )
 
-        await interaction.response.send_message(f"✅ Tu ticket fue creado: {channel.mention}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Ticket creado: {channel.mention}", ephemeral=True)
 
 # ================= BOTONES =================
 
@@ -136,71 +131,53 @@ class TicketButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Reclamar Ticket", style=discord.ButtonStyle.green, custom_id="claim_ticket")
-    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("🎯 Ticket reclamado.", ephemeral=True)
-
-    @discord.ui.button(label="Cerrar Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket")
+    @discord.ui.button(label="🔒 Cerrar Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Selecciona motivo:", view=CloseReason(), ephemeral=True)
-
-# ================= MOTIVO =================
-
-class CloseReason(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-
-    @discord.ui.select(
-        placeholder="Selecciona motivo",
-        custom_id="close_reason_select",
-        options=[
-            discord.SelectOption(label="Ticket Resuelto"),
-            discord.SelectOption(label="Ticket abierto sin motivo"),
-            discord.SelectOption(label="Ticket con inactividad")
-        ]
-    )
-    async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
-        await interaction.channel.send(f"🔒 Cerrado: {select.values[0]}")
+        await interaction.channel.send("🔒 Ticket cerrado")
         await interaction.channel.delete()
 
-# ================= COMANDOS =================
+# ================= COMANDO PANEL =================
 
-@bot.command()
-async def panel(ctx):
+@bot.command(name="panel-send")
+async def panel_send(ctx):
+
+    # BORRA EL COMANDO
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
     embed = discord.Embed(
-        title="🎫 Sistema Oficial de Tickets",
+        title="🎫 Sistema de Tickets",
         description="""
-<:Soportegeneral:1478091664596664541> **Soporte General**
-<:developer:1478090349611057335> **Soporte Tecnico**
-<:miembro:1478090498076835910> **Reportar Usuario**
-<:staffteam:1478090615056236697> **Reportar Moderador**
-<:Booster:1478090731288662186> **Reclamar Beneficios**
+📌 **Abre un ticket seleccionando una opción**
 
-Selecciona una categoría.
-        """,
-        color=discord.Color.from_rgb(255, 255, 255)
+<:Soportegeneral:1478091664596664541> Soporte General  
+<:developer:1478090349611057335> Soporte Tecnico  
+<:miembro:1478090498076835910> Reportar Usuario  
+<:staffteam:1478090615056236697> Reportar Moderador  
+<:Booster:1478090731288662186> Reclamar Beneficios  
+
+⚠ Usa el menú desplegable debajo
+""",
+        color=discord.Color.white()
     )
-    embed.set_footer(text="Dev Neiwito! • Tickets System")
+
+    embed.set_footer(text="Dev Neiwito • Sistema de Tickets")
 
     await ctx.send(embed=embed, view=TicketPanel())
 
-# 🔥 COMANDO PARA SINCRONIZAR
-@bot.command()
-async def sync(ctx):
-    await tree.sync()
-    await ctx.send("✅ Slash commands sincronizados")
+# ================= FIX =================
 
-# 🔥 FIX COMANDOS
 @bot.event
 async def on_message(message):
     await bot.process_commands(message)
 
-# ================= READY =================
-
 @bot.event
 async def on_ready():
+    bot.add_view(TicketPanel())
     bot.add_view(TicketButtons())
-    setup_status(bot)
+    setup_status()
     print("Bot listo.")
 
 # ================= RUN =================
