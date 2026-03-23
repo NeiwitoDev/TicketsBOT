@@ -326,11 +326,14 @@ async def calificar_staff(
 
     await interaction.response.send_message("✅ Evaluación enviada.", ephemeral=True)
 
+from status import setup_status  
+
 @bot.event
 async def on_ready():
     await tree.sync()
     bot.add_view(TicketPanel())
     bot.add_view(TicketButtons())
+    setup_status(bot)  
     print("Bot listo.")
 
 keep_alive()
