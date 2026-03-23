@@ -25,10 +25,6 @@ TOKEN = os.getenv("TOKEN")
 
 CATEGORY_ID = 1466491475436245220
 STAFF_ROLE_ID = 1466245030334435398
-ADMIN_RESET_ROLE = 1466440467204800597
-
-CANAL_CALIFICAR = 1466231866041307187
-CANAL_RESULTADOS = 1466240831609638923
 
 DATA_FILE = "data.json"
 
@@ -82,26 +78,11 @@ class TicketPanel(discord.ui.View):
         placeholder="Selecciona una categoría",
         custom_id="ticket_select",
         options=[
-            discord.SelectOption(
-                label="Soporte General",
-                emoji=discord.PartialEmoji(name="Soportegeneral", id=1478091664596664541)
-            ),
-            discord.SelectOption(
-                label="Soporte Tecnico",
-                emoji=discord.PartialEmoji(name="developer", id=1478090349611057335)
-            ),
-            discord.SelectOption(
-                label="Reportar Usuario",
-                emoji=discord.PartialEmoji(name="miembro", id=1478090498076835910)
-            ),
-            discord.SelectOption(
-                label="Reportar Moderador",
-                emoji=discord.PartialEmoji(name="staffteam", id=1478090615056236697)
-            ),
-            discord.SelectOption(
-                label="Reclamar Beneficios",
-                emoji=discord.PartialEmoji(name="Booster", id=1478090731288662186)
-            )
+            discord.SelectOption(label="Soporte General", emoji=discord.PartialEmoji(name="Soportegeneral", id=1478091664596664541)),
+            discord.SelectOption(label="Soporte Tecnico", emoji=discord.PartialEmoji(name="developer", id=1478090349611057335)),
+            discord.SelectOption(label="Reportar Usuario", emoji=discord.PartialEmoji(name="miembro", id=1478090498076835910)),
+            discord.SelectOption(label="Reportar Moderador", emoji=discord.PartialEmoji(name="staffteam", id=1478090615056236697)),
+            discord.SelectOption(label="Reclamar Beneficios", emoji=discord.PartialEmoji(name="Booster", id=1478090731288662186))
         ]
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
@@ -157,27 +138,10 @@ class TicketButtons(discord.ui.View):
 
     @discord.ui.button(label="Reclamar Ticket", style=discord.ButtonStyle.green, custom_id="claim_ticket")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        if STAFF_ROLE_ID not in [r.id for r in interaction.user.roles]:
-            return await interaction.response.send_message("❌ Solo staff.", ephemeral=True)
-
-        channel_id = str(interaction.channel.id)
-
-        if channel_id in data["claims"]:
-            return await interaction.response.send_message("❌ Ya está reclamado.", ephemeral=True)
-
-        data["claims"][channel_id] = interaction.user.id
-        save_data(data)
-
-        await interaction.channel.send(f"🎯 Ticket reclamado por {interaction.user.mention}")
-        await interaction.response.defer()
+        await interaction.response.send_message("🎯 Ticket reclamado.", ephemeral=True)
 
     @discord.ui.button(label="Cerrar Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket")
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
-
-        if STAFF_ROLE_ID not in [r.id for r in interaction.user.roles]:
-            return await interaction.response.send_message("❌ Solo staff.", ephemeral=True)
-
         await interaction.response.send_message("Selecciona motivo:", view=CloseReason(), ephemeral=True)
 
 # ================= MOTIVO =================
@@ -199,7 +163,7 @@ class CloseReason(discord.ui.View):
         await interaction.channel.send(f"🔒 Cerrado: {select.values[0]}")
         await interaction.channel.delete()
 
-# ================= COMANDO =================
+# ================= COMANDOS =================
 
 @bot.command()
 async def panel(ctx):
@@ -219,6 +183,11 @@ Selecciona una categoría.
     embed.set_footer(text="Dev Neiwito! • Tickets System")
 
     await ctx.send(embed=embed, view=TicketPanel())
+
+# 🔥 FIX COMANDOS
+@bot.event
+async def on_message(message):
+    await bot.process_commands(message)
 
 # ================= READY =================
 
