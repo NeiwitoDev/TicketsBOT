@@ -277,8 +277,7 @@ Selecciona una categoría.
 @bot.event
 async def on_ready():
     await tree.sync()
-    bot.add_view(TicketPanel())
-    bot.add_view(TicketButtons())
+    bot.add_view(TicketButtons()) 
     setup_status(bot)
     print("Bot listo.")
 
