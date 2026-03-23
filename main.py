@@ -184,6 +184,12 @@ Selecciona una categoría.
 
     await ctx.send(embed=embed, view=TicketPanel())
 
+# 🔥 COMANDO PARA SINCRONIZAR
+@bot.command()
+async def sync(ctx):
+    await tree.sync()
+    await ctx.send("✅ Slash commands sincronizados")
+
 # 🔥 FIX COMANDOS
 @bot.event
 async def on_message(message):
@@ -193,7 +199,6 @@ async def on_message(message):
 
 @bot.event
 async def on_ready():
-    await tree.sync()
     bot.add_view(TicketButtons())
     setup_status(bot)
     print("Bot listo.")
