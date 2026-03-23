@@ -80,13 +80,28 @@ class TicketPanel(discord.ui.View):
 
     @discord.ui.select(
         placeholder="Selecciona una categoría",
-        custom_id="ticket_select",  # 👈 FIX
+        custom_id="ticket_select",
         options=[
-            discord.SelectOption(label="Soporte General", emoji="<:Soportegeneral:1478091664596664541>"),
-            discord.SelectOption(label="Soporte Tecnico", emoji="<:developer:1478090349611057335>"),
-            discord.SelectOption(label="Reportar Usuario", emoji="<:miembro:1478090498076835910>"),
-            discord.SelectOption(label="Reportar Moderador", emoji="<:staffteam:1478090615056236697>"),
-            discord.SelectOption(label="Reclamar Beneficios", emoji="<:Booster:1478090731288662186>")
+            discord.SelectOption(
+                label="Soporte General",
+                emoji=discord.PartialEmoji(name="Soportegeneral", id=1478091664596664541)
+            ),
+            discord.SelectOption(
+                label="Soporte Tecnico",
+                emoji=discord.PartialEmoji(name="developer", id=1478090349611057335)
+            ),
+            discord.SelectOption(
+                label="Reportar Usuario",
+                emoji=discord.PartialEmoji(name="miembro", id=1478090498076835910)
+            ),
+            discord.SelectOption(
+                label="Reportar Moderador",
+                emoji=discord.PartialEmoji(name="staffteam", id=1478090615056236697)
+            ),
+            discord.SelectOption(
+                label="Reclamar Beneficios",
+                emoji=discord.PartialEmoji(name="Booster", id=1478090731288662186)
+            )
         ]
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
@@ -94,16 +109,10 @@ class TicketPanel(discord.ui.View):
         user_id = str(interaction.user.id)
 
         if user_id in data["open"]:
-            return await interaction.response.send_message(
-                "❌ Ya tienes un ticket abierto.",
-                ephemeral=True
-            )
+            return await interaction.response.send_message("❌ Ya tienes un ticket abierto.", ephemeral=True)
 
         data["count"] += 1
         ticket_number = f"{data['count']:03d}"
-        channel_name = f"ticket-{ticket_number}"
-
-        category = interaction.guild.get_channel(CATEGORY_ID)
 
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -112,9 +121,9 @@ class TicketPanel(discord.ui.View):
         }
 
         channel = await interaction.guild.create_text_channel(
-            name=channel_name,
+            name=f"ticket-{ticket_number}",
             overwrites=overwrites,
-            category=category
+            category=interaction.guild.get_channel(CATEGORY_ID)
         )
 
         data["open"][user_id] = channel.id
@@ -132,18 +141,13 @@ Un miembro del staff atenderá tu solicitud pronto.
             color=0x2b2d31
         )
 
-        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
-
         await channel.send(
-            content=staff_role.mention,
+            content=interaction.guild.get_role(STAFF_ROLE_ID).mention,
             embed=embed,
             view=TicketButtons()
         )
 
-        await interaction.response.send_message(
-            f"✅ Tu ticket fue creado: {channel.mention}",
-            ephemeral=True
-        )
+        await interaction.response.send_message(f"✅ Tu ticket fue creado: {channel.mention}", ephemeral=True)
 
 # ================= BOTONES =================
 
@@ -160,43 +164,12 @@ class TicketButtons(discord.ui.View):
         channel_id = str(interaction.channel.id)
 
         if channel_id in data["claims"]:
-
-            if data["claims"][channel_id] == interaction.user.id:
-                return await interaction.response.send_message(
-                    "⚠️ Ya reclamaste este ticket.",
-                    ephemeral=True
-                )
-            else:
-                return await interaction.response.send_message(
-                    "❌ Este ticket ya está reclamado por otro staff.",
-                    ephemeral=True
-                )
+            return await interaction.response.send_message("❌ Ya está reclamado.", ephemeral=True)
 
         data["claims"][channel_id] = interaction.user.id
         save_data(data)
 
-        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
-        for member in staff_role.members:
-            if member.id != interaction.user.id:
-                await interaction.channel.set_permissions(member, read_messages=False)
-
-        embed = discord.Embed(
-            title="🎯 Ticket Reclamado",
-            description=f"<:staffteam:1478090615056236697> Staff asignado: {interaction.user.mention}",
-            color=0x57F287
-        )
-
-        await interaction.channel.send(embed=embed)
-
-        user_id = next((u for u, c in data["open"].items() if c == interaction.channel.id), None)
-        if user_id:
-            user = await bot.fetch_user(int(user_id))
-            await user.send(embed=discord.Embed(
-                title="📩 Tu ticket fue asignado",
-                description=f"El staff {interaction.user} está atendiendo tu caso.",
-                color=0x57F287
-            ))
-
+        await interaction.channel.send(f"🎯 Ticket reclamado por {interaction.user.mention}")
         await interaction.response.defer()
 
     @discord.ui.button(label="Cerrar Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket")
@@ -205,11 +178,7 @@ class TicketButtons(discord.ui.View):
         if STAFF_ROLE_ID not in [r.id for r in interaction.user.roles]:
             return await interaction.response.send_message("❌ Solo staff.", ephemeral=True)
 
-        await interaction.response.send_message(
-            "Selecciona el motivo de cierre:",
-            view=CloseReason(),
-            ephemeral=True
-        )
+        await interaction.response.send_message("Selecciona motivo:", view=CloseReason(), ephemeral=True)
 
 # ================= MOTIVO =================
 
@@ -219,7 +188,7 @@ class CloseReason(discord.ui.View):
 
     @discord.ui.select(
         placeholder="Selecciona motivo",
-        custom_id="close_reason_select",  # 👈 FIX
+        custom_id="close_reason_select",
         options=[
             discord.SelectOption(label="Ticket Resuelto"),
             discord.SelectOption(label="Ticket abierto sin motivo"),
@@ -227,32 +196,10 @@ class CloseReason(discord.ui.View):
         ]
     )
     async def select_callback(self, interaction: discord.Interaction, select: discord.ui.Select):
-
-        motivo = select.values[0]
-
-        user_id = next((u for u, c in data["open"].items() if c == interaction.channel.id), None)
-
-        embed = discord.Embed(
-            title="🔒 Ticket Cerrado",
-            description=f"Motivo: **{motivo}**\nCerrado por: {interaction.user.mention}",
-            color=0xED4245
-        )
-
-        await interaction.channel.send(embed=embed)
-
-        if user_id:
-            user = await bot.fetch_user(int(user_id))
-            await user.send(embed=embed)
-            del data["open"][user_id]
-
-        if str(interaction.channel.id) in data["claims"]:
-            del data["claims"][str(interaction.channel.id)]
-
-        save_data(data)
-
+        await interaction.channel.send(f"🔒 Cerrado: {select.values[0]}")
         await interaction.channel.delete()
 
-# ================= COMANDOS =================
+# ================= COMANDO =================
 
 @bot.command()
 async def panel(ctx):
@@ -270,6 +217,7 @@ Selecciona una categoría.
         color=discord.Color.from_rgb(255, 255, 255)
     )
     embed.set_footer(text="Dev Neiwito! • Tickets System")
+
     await ctx.send(embed=embed, view=TicketPanel())
 
 # ================= READY =================
@@ -277,7 +225,7 @@ Selecciona una categoría.
 @bot.event
 async def on_ready():
     await tree.sync()
-    bot.add_view(TicketButtons()) 
+    bot.add_view(TicketButtons())
     setup_status(bot)
     print("Bot listo.")
 
